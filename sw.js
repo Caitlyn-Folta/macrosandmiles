@@ -1,9 +1,12 @@
-/* Macros & Miles service worker — bump CACHE version when you change index.html */
-const CACHE = "mm-v12";
+/* Macros & Miles service worker — bump CACHE version when you change
+   index.html, food-db.js, or humor-bank.js */
+const CACHE = "mm-v13";
 
 const ASSETS = [
   "./",
   "./index.html",
+  "./food-db.js",
+  "./humor-bank.js",
   "./manifest.json",
   "./icon-192.png",
   "./icon-512.png",
