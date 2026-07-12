@@ -313,6 +313,7 @@ const COUNT_UNITS = new Set([
 
 const normalizeFood = (s) =>
   s.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") /* jalapeño -> jalapeno, rosé -> rose */
     .replace(/½/g, "1/2").replace(/¼/g, "1/4").replace(/¾/g, "3/4").replace(/⅓/g, "1/3")
     .replace(/\s+/g, " ").trim();
 
@@ -383,8 +384,27 @@ function parseSegment(raw) {
   };
 }
 
-const splitSegments = (desc) =>
-  desc.split(/\+|,|&|\band\b|\bwith\b|\bw\/\b|\bplus\b/i).map((x) => x.trim()).filter(Boolean);
+/* Dish names that contain "and"/"&" must survive the segment splitter —
+   each has a matching FOOD_DB key so it resolves as ONE dish. */
+const COMPOUND_DISHES = [
+  "mac and cheese", "mac & cheese", "macaroni and cheese",
+  "chips and salsa", "chips and queso",
+  "fish and chips", "rice and beans", "beans and rice",
+  "peanut butter and jelly", "pb & j", "pb&j",
+  "biscuits and gravy", "chicken and waffles", "ham and cheese",
+  "half and half", "sweet and sour",
+];
+const splitSegments = (desc) => {
+  let s = desc;
+  const stash = [];
+  for (const dish of COMPOUND_DISHES) {
+    const re = new RegExp(dish.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    s = s.replace(re, (m) => { stash.push(m); return "\u0001" + (stash.length - 1) + "\u0001"; });
+  }
+  return s.split(/\+|,|&|\band\b|\bwith\b|\bw\/\b|\bplus\b/i)
+    .map((x) => x.replace(/\u0001(\d+)\u0001/g, (_, i) => stash[Number(i)]).trim())
+    .filter(Boolean);
+};
 
 function scaleFactor(parsed, entry) {
   const { qty, unit } = parsed;
@@ -500,8 +520,9 @@ function portionGrams(portions, parsed) {
 async function usdaResolve(parsed) {
   let foods = await usdaSearch(parsed.name);
   if (!foods.length) {
-    /* long descriptions rarely match — retry on the last two words ("grandma's beef stew" -> "beef stew") */
-    const words = parsed.name.split(/\s+/).filter(Boolean);
+    /* long descriptions rarely match — retry on the last two substantial
+       words ("jalapeno popper mac n cheese" -> "mac cheese", not "n cheese") */
+    const words = parsed.name.split(/\s+/).filter((w) => w.length > 2);
     if (words.length > 2) foods = await usdaSearch(words.slice(-2).join(" "));
   }
   if (!foods.length) return { status: "none" };
@@ -615,17 +636,24 @@ async function offResolve(parsed) {
 
 async function lookupFood(desc) {
   const results = [];
+  const wordsIn = (s) => s.trim().split(/\s+/).length;
   for (const seg of splitSegments(desc)) {
     const parsed = parseSegment(seg);
     if (!parsed) continue;
 
+    /* A local match is only trusted outright when the keyword covers most
+       of the typed name. "jalapeno popper mac n cheese" matching the plain
+       "mac n cheese" key is a WEAK match: a composite dish deserves an API
+       lookup first, with the local match kept as the offline fallback.
+       Custom foods are always trusted — the user named them. */
     const local = localMatch(parsed.name);
-    if (local) {
+    const localResolved = () => {
       const sf = scaleFactor(parsed, local.entry);
-      const label = parsed.qty !== 1 || parsed.unit.type !== "count" ? parsed.raw.slice(0, 50) : local.key;
-      results.push({ status: "resolved", source: local.custom ? "custom" : "local", parsed, entry: applyFactor(local.entry, label, sf.factor, sf.rough) });
-      continue;
-    }
+      return { status: "resolved", source: local.custom ? "custom" : "local", parsed, entry: applyFactor(local.entry, parsed.raw.slice(0, 50), sf.factor, sf.rough) };
+    };
+    const strongLocal = local && (local.custom ||
+      (wordsIn(parsed.name) - wordsIn(local.key) <= 1 && local.key.length * 2 >= parsed.name.length));
+    if (strongLocal) { results.push(localResolved()); continue; }
 
     const cached = cacheGet(parsed.name);
     if (cached) {
@@ -648,6 +676,7 @@ async function lookupFood(desc) {
         if (o.status !== "none") hit = Object.assign({ source: "off", parsed }, o);
       } catch (e) { err = err || e.message; }
     }
+    if (!hit && local) { const r = localResolved(); r.entry.rough = true; results.push(r); continue; }
     results.push(hit || { status: "none", source: err ? "error" : "noresult", parsed, error: err });
   }
   return { segments: results };
