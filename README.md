@@ -17,7 +17,11 @@ App icons
 Rules to remember
 After editing index.html, bump the cache version in sw.js. Change mm-v1 to mm-v2 (then v3, and so on) and commit both. If you skip this, phones keep serving the old cached version. The app auto-reloads once when a new service worker takes control, so updates land on the same open — but only if the cache version was bumped.
 
-Morning briefing. On the first open of each calendar day (tracked via sh:lastVisit), a sheet recaps yesterday — items/calories/steps/macro goals, with a verdict headline and a "today's mission" line — in the same never-shameful voice. Logic in buildBriefing() in index.html.
+Morning briefing. On the first open of each calendar day (tracked via sh:lastVisit), a sheet recaps yesterday — items/calories/steps/macro goals, with a verdict headline and a "today's mission" line — in the same never-shameful voice. Logic in buildBriefing() in index.html. On Mondays (and Sunday nights after closing the day) the week-in-review sheet takes its place: last week's stats plus goal reconfirmation inputs (buildWeekReview(), tracked via profile.lastWeekReview).
+
+Plan tab. Goals (calories, steps, protein, fiber), weekend budgeting, the period tracker, and backup export live in the fourth tab (the ⚙︎ gear jumps there). Weekend budgeting: settings.weekendShift moves N cal from each Mon–Thu day into the Fri–Sun pool (weekday budget = calTarget − shift, base pool = 3×calTarget + 4×shift; weekly total unchanged) — helpers weekdayTarget()/poolBase() in index.html. Period tracker: marked days (sh:cycle) render as pink dots on the weight chart and are excluded from the pace projection.
+
+Voice input. The food description box is a textarea with a 🎤 dictation button (Web Speech API; on browsers without it the button explains the keyboard mic works too). Enter submits, Shift+Enter makes a newline.
 
 USDA API key lives near the top of index.html: const USDA_KEY = "". Free key from https://fdc.nal.usda.gov/api-key-signup.html. With no key, the app still works using its built-in food table and cache — it just can't look up unfamiliar foods.
 
