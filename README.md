@@ -21,6 +21,6 @@ USDA API key lives near the top of index.html: const USDA_KEY = "". Free key fro
 
 Backups. Data exists only on the phone. Use Settings → Export backup (JSON) in the app occasionally and save the file somewhere safe.
 
-Editing the food table. The built-in foods are in the FOOD_DB array in index.html. Per-serving values: c calories, p protein g, f fiber g, g grams per serving (enables "6 oz chicken" scaling), ml + liquid: true for drinks.
+Editing the food table. The built-in foods are in the FOOD_DB array in index.html. Per-serving values: c calories, p protein g, f fiber g, g grams per serving (enables "6 oz chicken" scaling), ml + liquid: true for drinks. You can also add foods from inside the app: the Food Database card on the Today tab scans a nutrition label photo (OCR via tesseract.js, loaded on demand) or takes manual entry, and saves the food to localStorage (mm:customfoods:v1). Custom foods are matched by name before the built-in table.
 How the food lookup works
-Three tiers, in order: built-in FOOD_DB table → localStorage cache of past lookups → USDA FoodData Central API. USDA results are cached locally, so each new food costs one API call ever, then works offline.
+Four tiers, in order: your custom foods (label scans / manual adds) → built-in FOOD_DB table → localStorage cache of past lookups → USDA FoodData Central API. USDA results are cached locally, so each new food costs one API call ever, then works offline. Estimate lists every item it parsed with its assigned calories and macros — each line is editable before it's added to the log, and logged entries can be edited afterward with the ✎ button.
