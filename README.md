@@ -6,7 +6,11 @@ Files
 File
 What it is
 index.html
-The entire app — UI, food database, lookup logic
+The app — UI and all logic (no build step; JSX compiles in the browser)
+food-db.js
+The built-in food table (plain data, safe to edit)
+humor-bank.js
+All humor content + rotation logic (plain data, safe to edit)
 sw.js
 Service worker (offline caching)
 manifest.json
@@ -15,7 +19,7 @@ icon-192.png, icon-512.png
 App icons
 
 Rules to remember
-After editing index.html, bump the cache version in sw.js. Change mm-v1 to mm-v2 (then v3, and so on) and commit both. If you skip this, phones keep serving the old cached version. The app auto-reloads once when a new service worker takes control, so updates land on the same open — but only if the cache version was bumped.
+After editing index.html, food-db.js, or humor-bank.js, bump the cache version in sw.js. Change mm-v1 to mm-v2 (then v3, and so on) and commit both. If you skip this, phones keep serving the old cached version. The app auto-reloads once when a new service worker takes control, so updates land on the same open — but only if the cache version was bumped.
 
 Morning briefing. On the first open of each calendar day (tracked via sh:lastVisit), a sheet recaps yesterday — items/calories/steps/macro goals, with a verdict headline and a "today's mission" line — in the same never-shameful voice. Logic in buildBriefing() in index.html. On Mondays (and Sunday nights after closing the day) the week-in-review sheet takes its place: last week's stats plus goal reconfirmation inputs (buildWeekReview(), tracked via profile.lastWeekReview).
 
@@ -25,9 +29,9 @@ Voice input. The food description box is a textarea with a 🎤 dictation button
 
 USDA API key lives near the top of index.html: const USDA_KEY = "". Free key from https://fdc.nal.usda.gov/api-key-signup.html. With no key, the app still works using its built-in food table and cache — it just can't look up unfamiliar foods.
 
-The humor. Pep talks, empty-log lines, and the "snack judge" (the quip that reacts to every food entry) live in PEP_TALKS, EMPTY_LOG_LINES, GENERIC_REACTIONS, and FOOD_REACTIONS in index.html. House rules for new lines: react to the food, the hour, or the habit — never weight, photos, or the person; witty, never shameful.
+The humor. Pep talks, empty-log lines, and the "snack judge" (the quip that reacts to every food entry) live in PEP_TALKS, EMPTY_LOG_LINES, GENERIC_REACTIONS, and FOOD_REACTIONS in humor-bank.js. House rules for new lines: react to the food, the hour, or the habit — never weight, photos, or the person; witty, never shameful.
 
-The humor bank. A larger curated bank (CONFESSION_LINES, OFFICIAL_LINES, DEADPAN_LINES, DATA_REACTIVE_LINES, SEASONAL_LINES + windows, and the easter-egg tier) lives in the HUMOR BANK section of index.html with its rotation logic (pickLine). Surfaces: the pep talk rotates confession/official/deadpan/classic once per open with seasonal lines folded in by date and a ~1-in-10 easter-egg roll; the snack judge fires data-reactive lines on triggers (chips/queso, 3+ drinks, over-budget-within-pool, pool-exhausted, protein-hit-on-an-over-day); the day-close reveal adds a closer line; the morning briefing uses shieldUsed/streakBrokenNoShield lines when those events actually occurred; pool days show one ambient line on the budget card. Rotation never repeats a line twice in a row per category (localStorage lastShownLineId:<category>). Context-only official lines (streak terminated, shield deployed) are excluded from random rotation and only fire from their triggers.
+The humor bank. A larger curated bank (CONFESSION_LINES, OFFICIAL_LINES, DEADPAN_LINES, DATA_REACTIVE_LINES, SEASONAL_LINES + windows, and the easter-egg tier) lives in humor-bank.js with its rotation logic (pickLine). Surfaces: the pep talk rotates confession/official/deadpan/classic once per open with seasonal lines folded in by date and a ~1-in-10 easter-egg roll; the snack judge fires data-reactive lines on triggers (chips/queso, 3+ drinks, over-budget-within-pool, pool-exhausted, protein-hit-on-an-over-day); the day-close reveal adds a closer line; the morning briefing uses shieldUsed/streakBrokenNoShield lines when those events actually occurred; pool days show one ambient line on the budget card. Rotation never repeats a line twice in a row per category (localStorage lastShownLineId:<category>). Context-only official lines (streak terminated, shield deployed) are excluded from random rotation and only fire from their triggers.
 
 Weekend game plan. On Fri–Sun the budget card swaps its bar for a burrito SVG that fills as the pool is eaten (BurritoMeter in index.html), and shows a per-day allocation: even three-way split by default, or tap Fri/Sat/Sun pips to mark heavy days — they get a 1.6× weighted share. The choice persists in settings.heavyDays (day-of-week numbers), so date night stays planned week after week. A live "stay near ~X today" line re-splits whatever pool remains across the remaining days.
 
@@ -35,6 +39,6 @@ Apple Health / Watch steps. Web apps can't read HealthKit directly (native-app o
 
 Backups. Data exists only on the phone. Use Settings → Export backup (JSON) in the app occasionally and save the file somewhere safe.
 
-Editing the food table. The built-in foods are in the FOOD_DB array in index.html. Per-serving values: c calories, p protein g, f fiber g, g grams per serving (enables "6 oz chicken" scaling), ml + liquid: true for drinks. You can also add foods from inside the app: the "📷 Scan a label" / "＋ New food" buttons in the calorie tracker card scan a nutrition label photo (OCR via tesseract.js, loaded on demand) or take manual entry, with checkboxes to log the food today, save it to your database (localStorage, mm:customfoods:v1), or both. Custom foods are matched by name before the built-in table.
+Editing the food table. The built-in foods are in the FOOD_DB array in food-db.js. Per-serving values: c calories, p protein g, f fiber g, g grams per serving (enables "6 oz chicken" scaling), ml + liquid: true for drinks. You can also add foods from inside the app: the "📷 Scan a label" / "＋ New food" buttons in the calorie tracker card scan a nutrition label photo (OCR via tesseract.js, loaded on demand) or take manual entry, with checkboxes to log the food today, save it to your database (localStorage, mm:customfoods:v1), or both. Custom foods are matched by name before the built-in table.
 How the food lookup works
 Five tiers, in order: your custom foods (label scans / manual adds) → built-in FOOD_DB table → localStorage cache of past lookups → USDA FoodData Central API (needs the free key) → Open Food Facts (free, no key, strong on branded/packaged foods). Long names that miss are retried with the last two words, and filler words ("some", "leftover"…) are stripped before lookup. API results are cached locally, so each new food costs one API call ever, then works offline. Estimate lists every item it parsed with its assigned calories and macros — each line is editable before it's added to the log, and logged entries can be edited afterward with the ✎ button. Want more lookup sources? Nutritionix, Edamam, and CalorieNinjas all work similarly but require signup for an API key — offResolve() in index.html is the template to copy.
