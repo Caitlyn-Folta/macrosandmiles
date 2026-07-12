@@ -490,7 +490,7 @@ const FOOD_DB = [
   { k: ["apple"], c: 95, p: 0, f: 4, g: 180 },
   { k: ["berries", "strawberries", "blueberries"], c: 70, p: 1, f: 4, g: 140 },
   { k: ["latte"], c: 120, p: 8, f: 0, ml: 355, liquid: true },
-  { k: ["black coffee", "americano"], c: 5, p: 0, f: 0, ml: 300, liquid: true },
+  { k: ["black coffee", "americano", "coffee"], c: 5, p: 0, f: 0, ml: 300, liquid: true },
   { k: ["turkey sandwich"], c: 350, p: 25, f: 4, g: 220 },
   { k: ["sandwich"], c: 400, p: 20, f: 3, g: 230 },
   { k: ["pasta", "spaghetti"], c: 400, p: 14, f: 3, g: 250 },
@@ -962,6 +962,11 @@ function parseNutritionLabel(text) {
   };
 }
 
+/* Entry ids must be unique — two adds in the same millisecond would share a
+   Date.now() id, making edit/delete hit both. Strictly monotonic instead. */
+let lastEntryId = 0;
+const nextEntryId = () => { lastEntryId = Math.max(lastEntryId + 1, Date.now()); return lastEntryId; };
+
 /* ---------- morning briefing: yesterday's verdict, today's motivation ----------
    Same house rules as all humor: react to the data and the habit, never
    the person. Off days get wit and a plan, never a lecture. */
@@ -1381,9 +1386,8 @@ function Streakhouse() {
 
   const addEntries = async (items) => {
     const hour = new Date().getHours();
-    const base = Date.now();
-    const es = items.map((it, i) => ({
-      id: base + i,
+    const es = items.map((it) => ({
+      id: nextEntryId(),
       name: (it.name || "").trim() || "Food",
       cal: Math.max(0, Math.round(it.cal)),
       p: Math.max(0, Math.round(it.p || 0)),
