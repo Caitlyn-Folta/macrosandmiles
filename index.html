@@ -225,7 +225,7 @@ const questsForDate = (dateStr) => {
 
 /* ---------- humor systems ---------- */
 const PEP_TALKS = [
-  "You've survived 100% of your worst days. The scale can take a number.",
+  "You've survived 100% of your worst days. Tuesday doesn't stand a chance.",
   "Discipline is just spite with a to-do list. You have both.",
   "Objection: snacks. Sustained: you already logged dinner.",
   "Today's forecast: 12,000 steps with a chance of smugness.",
@@ -249,6 +249,22 @@ const PEP_TALKS = [
   "Every great streak started on one unremarkable Tuesday.",
   "Hydrate. Litigate. Ambulate.",
   "The record shows you keep showing up. Keep the record clean.",
+  "Motivation shows up late. Habits open the courtroom on time.",
+  "You can't out-think dinner. You can out-log it.",
+  "Track the boring days. They're the ones doing the heavy lifting.",
+  "Streaks are just Tuesdays holding hands.",
+  "The gavel is your thumb. Rule accordingly.",
+  "Somewhere a version of you skipped logging. Be the one with receipts.",
+  "Twelve thousand steps starts with one very reluctant shoe.",
+  "The pantry fears an informed opponent.",
+  "Good data, good decisions, good tacos. In that order.",
+  "Appeal denied: you are, in fact, capable of this.",
+  "Chaos eats whatever it wants. You eat what you logged. Advantage: you.",
+  "Two minutes of logging buys a whole evening of not wondering.",
+  "Verdicts change daily. The habit is the precedent that stands.",
+  "Consistency is a superpower disguised as a chore.",
+  "The streak isn't watching you. It's rooting for you.",
+  "Every entry is a tiny closing argument in your favor.",
 ];
 const FOOD_PLACEHOLDERS = [
   "2 street tacos + a modelo",
@@ -264,7 +280,125 @@ const EMPTY_LOG_LINES = [
   "Zero entries. Suspiciously quiet in here.",
   "Empty docket. The tacos plead the fifth.",
   "No entries yet. The court will allow a snack.",
+  "The docket is blank. The pen is right there, counselor.",
+  "Still nothing on record. Even a coffee counts as testimony.",
+  "The snack judge waits patiently. The snack judge has jokes prepared.",
 ];
+/* ---------- the snack judge: a quip for every food entry ----------
+   House rules: react to the food, the hour, or the habit — never to weight,
+   photos, or the person. Witty, never shameful. */
+const GENERIC_REACTIONS = [
+  "Noted, notarized, and mildly admired.",
+  "The record grows stronger. So does the case for trusting yourself.",
+  "Logged in under thirty seconds. Your past self is jealous of this system.",
+  "Another entry, another brick in the wall of evidence.",
+  "The court accepts this exhibit with enthusiasm.",
+  "Data received. The trend line says thank you.",
+  "Filed. Somewhere, a spreadsheet sheds a single proud tear.",
+  "Your thumbs did the work. History will remember them.",
+  "Entry accepted. The snack actuary nods approvingly.",
+  "Every log is a small act of self-respect. This one's on record.",
+  "Objection? None. The entry stands.",
+  "Sworn in and seated. Next witness.",
+  "The ledger never sleeps, and today it eats well.",
+  "Precedent set: you log things. Case law loves consistency.",
+];
+const FOOD_REACTIONS = [
+  { match: (c) => /beer|wine|margarita|cocktail|seltzer|tequila|vodka|whiskey|modelo|michelob|mimosa|sangria|spritz|claw|prosecco|champagne/.test(c.names), lines: [
+    "Logged in real time, not reconstructed from vibes tomorrow. The court admires the honesty.",
+    "Cheers. The ledger stays sober so you don't have to.",
+    "Entered into evidence before the second round. Professional.",
+    "The pool math already budgeted for fun. Proceed as planned.",
+    "One drink on the record beats three forgotten ones. The bartender and science agree.",
+    "Count the pours, win the weekend. You're literally doing the quest.",
+  ]},
+  { match: (c) => /coffee|latte|espresso|americano|cappuccino|cold brew|macchiato/.test(c.names), lines: [
+    "Caffeine: the only witness that never needs coaxing.",
+    "The court recognizes the morning's first expert witness.",
+    "Logged. Justice may now proceed at full speed.",
+    "Coffee isn't a personality, but it is an entry. Well done.",
+    "The bench is now sufficiently caffeinated to rule fairly.",
+  ]},
+  { match: (c) => /taco|pizza|burger|fries|burrito|quesadilla|wing|nacho|hot dog|sub|cheesesteak/.test(c.names), lines: [
+    "Excellent taste, meticulously documented. The system works.",
+    "A classic. Logged like a professional, enjoyed like a civilian.",
+    "The tribunal of flavor finds in your favor.",
+    "Tracked tacos taste better. This is settled law.",
+    "Regret never comes from the good stuff. It comes from mystery math. You have no mystery math.",
+  ]},
+  { match: (c) => /cookie|ice cream|chocolate|donut|doughnut|cake|brownie|candy|pie|pastry|croissant|dessert|sundae/.test(c.names), lines: [
+    "Dessert, on the record and unashamed. Exactly how the system is supposed to work.",
+    "Sweet tooth, sharp bookkeeping. A balanced portfolio.",
+    "The court allows joy. Always has.",
+    "Logged with the confidence of someone whose numbers still work. Respect.",
+    "Life includes cookies. Budgets exist precisely so it can.",
+  ]},
+  { match: (c) => c.fib >= 6 || /salad|broccoli|veggie|vegetable|greens|spinach|kale|edamame|beans|hummus/.test(c.names), lines: [
+    "🥦 The Roughage Report will be thrilled.",
+    "Fiber logged. Your gut's legal team sends their regards.",
+    "Greens on the docket. The vegetable lobby is very pleased.",
+    "Vegetables, entered willingly. Not even under oath.",
+    "The colon files a formal thank-you note.",
+  ]},
+  { match: (c) => c.prot >= 25, lines: [
+    "💪 That's a protein deposition if I've ever seen one.",
+    "The muscles have retained counsel, and counsel eats well.",
+    "Protein secured. Future you just got measurably stronger on paper.",
+    "A power move, in grams.",
+    "Exhibit swole. Admitted without objection.",
+  ]},
+  { match: (c) => c.hour < 10, lines: [
+    "Rope-drop logging. The early entry sets the whole day's tone.",
+    "First on the docket. Everything after this is easier.",
+    "Morning entry filed. The day officially has a paper trail.",
+    "The early log catches the streak.",
+  ]},
+  { match: (c) => c.hour >= 21, lines: [
+    "Filed after hours. The night clerk stamps it without comment.",
+    "Late entry, fully admissible. Honesty keeps no business hours.",
+    "The kitchen was open, and so was the log. That's the whole assignment.",
+    "Midnight testimony counts double for character.",
+  ]},
+  { match: (c) => c.cal >= 600, lines: [
+    "A substantial exhibit. Logged whole, no rounding down — that's integrity.",
+    "Big number, zero mystery. This is exactly why the budget exists.",
+    "One honest large entry beats five creative estimates. The record thanks you.",
+    "Documented at full size. The court respects a witness who doesn't mumble.",
+  ]},
+  { match: (c) => c.cal > 0 && c.cal <= 100, lines: [
+    "A light exhibit, dutifully filed. No entry too small for the record.",
+    "Even the little ones count. Especially the little ones.",
+    "Small bite, big habit. That's how chains get built.",
+    "No exhibit is beneath the court's attention.",
+  ]},
+  { match: (c) => c.count >= 3, lines: [
+    "A full meal, itemized like a tax return. The auditors weep with joy.",
+    "Multiple exhibits, one tap of the gavel. Efficient.",
+    "The whole plate, on the record. Nothing pleads the fifth today.",
+    "An itemized meal. Somewhere a forensic accountant just felt a disturbance of pure delight.",
+  ]},
+  { match: (c) => c.isFirst, lines: [
+    "First entry: the hardest one. The day is officially in session.",
+    "The docket opens. Everything from here is momentum.",
+    "Day one row, logged. Every dataset envies a strong opening.",
+  ]},
+];
+
+function mealQuipFor(added, priorCount) {
+  const c = {
+    names: added.map((e) => e.name.toLowerCase()).join(" "),
+    cal: added.reduce((a, e) => a + e.cal, 0),
+    prot: added.reduce((a, e) => a + (e.p || 0), 0),
+    fib: added.reduce((a, e) => a + (e.f || 0), 0),
+    hour: new Date().getHours(),
+    count: added.length,
+    isFirst: priorCount === 0,
+  };
+  const pools = FOOD_REACTIONS.filter((s) => s.match(c)).map((s) => s.lines);
+  const pool = pools.length ? pools[Math.floor(Math.random() * pools.length)] : GENERIC_REACTIONS;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
 const scoreQuip = (s) =>
   s >= 90 ? "Flawless. The prosecution rests." :
   s >= 70 ? "Strong showing. The jury is visibly impressed." :
@@ -820,6 +954,7 @@ function Streakhouse() {
   const [estimating, setEstimating] = useState(false);
   const [estimateNote, setEstimateNote] = useState("");
   const [estimateItems, setEstimateItems] = useState(null);
+  const [mealQuip, setMealQuip] = useState("");
   const [editEntry, setEditEntry] = useState(null);
   const [customFoods, setCustomFoods] = useState(customLoad);
   const [labelBusy, setLabelBusy] = useState(false);
@@ -1068,6 +1203,7 @@ function Streakhouse() {
     }));
     await commitDay(Object.assign({}, day, { entries: [...day.entries, ...es], xp: day.xp + 5 * es.length }));
     await awardXp(5 * es.length);
+    setMealQuip(mealQuipFor(es, day.entries.length));
     setDesc(""); setCalInput(""); setProtInput(""); setFibInput(""); setEstimateNote(""); setEstimateItems(null);
   };
   const addEntry = (name, cal, p = 0, f = 0) => addEntries([{ name, cal, p, f }]);
@@ -1434,6 +1570,9 @@ function Streakhouse() {
         .entry .cal { font-weight:900; font-size:14px; }
         .tinybtn { border:none; background:none; padding:2px 4px; font-size:15px; cursor:pointer; }
         .note { font-size:12px; color:#7A2FF2; font-weight:800; margin-top:8px; }
+        .quip { background:#F0E7FF; border:2px solid #7A2FF2; border-radius:14px; padding:10px 14px; margin-top:12px; transform:rotate(-.4deg); }
+        .quip .ql { font-size:9px; font-weight:900; letter-spacing:1.5px; text-transform:uppercase; color:#7A2FF2; }
+        .quip .qt { font-size:13px; font-weight:800; margin-top:2px; line-height:1.35; }
         .estitem { background:#F6EFFF; border:2px dashed #2B1B3D; border-radius:14px; padding:10px; margin-top:10px; }
         .estitem input { background:#fff; }
         .estnote { font-size:11px; color:#7A6B8E; font-weight:800; margin-top:6px; }
@@ -1676,6 +1815,13 @@ function Streakhouse() {
                   </div>
                 ))}
                 <div className="chip" style={{ background: "#fff" }} onClick={() => setManagePresets(!managePresets)}>{managePresets ? "done" : "edit"}</div>
+              </div>
+            )}
+
+            {mealQuip && day.entries.length > 0 && (
+              <div className="quip" aria-live="polite">
+                <div className="ql">The snack judge responds</div>
+                <div className="qt">{mealQuip}</div>
               </div>
             )}
 
