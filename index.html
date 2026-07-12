@@ -112,6 +112,7 @@ const K = {
   photoIndex: "sh:photoIndex",
   profile: "sh:profile",
   lastVisit: "sh:lastVisit",
+  cycle: "sh:cycle",
   day: (d) => "sh:day:" + d,
   photo: (d) => "sh:photo:" + d,
 };
@@ -143,7 +144,15 @@ const emptyDay = (date) => ({ date, entries: [], steps: 0, closed: false, mq: {}
 const sget = async (k) => { try { const r = await window.storage.get(k); return r ? JSON.parse(r.value) : null; } catch { return null; } };
 const sset = async (k, v) => { try { await window.storage.set(k, JSON.stringify(v)); return true; } catch (e) { console.error("storage", e); return false; } };
 
-/* ---------- weekly banking math ---------- */
+/* ---------- weekly banking math ----------
+   weekendShift moves calories from each Mon-Thu day into the Fri-Sun pool:
+   weekday budget = calTarget - shift, base pool = 3*calTarget + 4*shift.
+   The weekly total stays 7 * calTarget either way. */
+const weekendShiftOf = (settings) => Math.max(0, settings.weekendShift || 0);
+const weekdayTarget = (settings) => settings.calTarget - weekendShiftOf(settings);
+const poolBase = (settings) => 3 * settings.calTarget + 4 * weekendShiftOf(settings);
+const dayBudget = (ds, settings) => (isPoolDay(ds) ? Math.round(poolBase(settings) / 3) : weekdayTarget(settings));
+
 const calFor = (ds, history, liveDate, liveCal) => (ds === liveDate ? liveCal : history[ds]?.c ?? null);
 
 const bankEarned = (anyDateInWeek, history, settings, liveDate, liveCal) => {
@@ -152,7 +161,7 @@ const bankEarned = (anyDateInWeek, history, settings, liveDate, liveCal) => {
   for (let i = 0; i < 4; i++) {
     const ds = shiftDate(mon, i);
     const c = calFor(ds, history, liveDate, liveCal);
-    if (c !== null && c > 0) bank += Math.max(0, settings.calTarget - c);
+    if (c !== null && c > 0) bank += Math.max(0, weekdayTarget(settings) - c);
   }
   return bank;
 };
@@ -172,8 +181,8 @@ const poolSpentThrough = (ds, history, liveDate, liveCal) => {
 const onPlanCal = (ds, history, settings, liveDate, liveCal) => {
   const c = calFor(ds, history, liveDate, liveCal);
   if (c === null || c === 0) return false;
-  if (!isPoolDay(ds)) return c <= settings.calTarget;
-  const pool = 3 * settings.calTarget + bankEarned(ds, history, settings, liveDate, liveCal);
+  if (!isPoolDay(ds)) return c <= weekdayTarget(settings);
+  const pool = poolBase(settings) + bankEarned(ds, history, settings, liveDate, liveCal);
   return poolSpentThrough(ds, history, liveDate, liveCal) <= pool;
 };
 
@@ -198,8 +207,8 @@ const windowsFilled = (day) => ({
 const WEEKDAY_QUESTS = [
   { id: "rope_drop", label: "Rope Drop", desc: "Log something before 10am", test: (c) => windowsFilled(c.day).morning },
   { id: "prosecution", label: "The Prosecution Rests", desc: "Everything logged before 9pm, day closed", test: (c) => c.day.closed && c.day.entries.length > 0 && c.day.entries.every((e) => e.hour < 21) },
-  { id: "split_check", label: "Split the Check", desc: "No single item over 40% of budget", test: (c) => c.day.entries.length > 0 && c.day.entries.every((e) => e.cal <= 0.4 * c.settings.calTarget) },
-  { id: "negative_space", label: "Negative Space", desc: "Leave a 200+ calorie buffer", test: (c) => c.day.entries.length > 0 && c.settings.calTarget - totalCal(c.day) >= 200 },
+  { id: "split_check", label: "Split the Check", desc: "No single item over 40% of budget", test: (c) => c.day.entries.length > 0 && c.day.entries.every((e) => e.cal <= 0.4 * dayBudget(c.day.date, c.settings)) },
+  { id: "negative_space", label: "Negative Space", desc: "Leave a 200+ calorie buffer", test: (c) => c.day.entries.length > 0 && dayBudget(c.day.date, c.settings) - totalCal(c.day) >= 200 },
   { id: "rule_of_three", label: "Rule of Three", desc: "Log at least 3 items", test: (c) => c.day.entries.length >= 3 },
   { id: "full_coverage", label: "Full Coverage", desc: "Fill all 3 meal windows", test: (c) => { const w = windowsFilled(c.day); return w.morning && w.midday && w.evening; } },
 ];
@@ -962,6 +971,32 @@ function parseNutritionLabel(text) {
   };
 }
 
+/* ---------- week in review: shown Sunday night and Monday morning ---------- */
+function buildWeekReview(mon, history, weights, settings) {
+  let logged = 0, cal = 0, steps = 0, onPlanDays = 0, stepDays = 0, protDays = 0, fibDays = 0;
+  for (let i = 0; i < 7; i++) {
+    const ds = shiftDate(mon, i);
+    const rec = history[ds];
+    if (rec && rec.e > 0) {
+      logged++; cal += rec.c;
+      if (onPlanCal(ds, history, settings, null, null)) onPlanDays++;
+    }
+    if (rec) steps += rec.s || 0;
+    if (rec && (rec.s || 0) >= settings.stepGoal) stepDays++;
+    if (rec && (rec.p || 0) >= settings.proteinGoal) protDays++;
+    if (rec && (rec.f || 0) >= settings.fiberGoal) fibDays++;
+  }
+  const sun = shiftDate(mon, 6);
+  const wk = weights.filter((w) => w.d >= mon && w.d <= sun).sort((a, b) => (a.d < b.d ? -1 : 1));
+  const wDelta = wk.length >= 2 ? Math.round((wk[wk.length - 1].w - wk[0].w) * 10) / 10 : null;
+  const verdict =
+    logged === 0 ? "A quiet week on the record. This one starts fresh — the first entry wins." :
+    onPlanDays >= 5 ? "That was a prosecution-grade week. Same goals, or raise the stakes?" :
+    onPlanDays >= 3 ? "A solid week with room in the margins. Keep the goals or tune them below." :
+    "The data came in bumpy — which is still data. Fit the goals to real life, then win the week.";
+  return { mon, sun, logged, avgCal: logged ? Math.round(cal / logged) : 0, steps, onPlanDays, stepDays, protDays, fibDays, wDelta, verdict };
+}
+
 /* Entry ids must be unique — two adds in the same millisecond would share a
    Date.now() id, making edit/delete hit both. Strictly monotonic instead. */
 let lastEntryId = 0;
@@ -1034,14 +1069,19 @@ function buildBriefing(yds, history, settings) {
   return { yds, headline, facts, tone, mission };
 }
 
-/* ---------- the weekend burrito: fills as the pool gets eaten ---------- */
+/* ---------- the weekend burrito: fills as the pool gets eaten ----------
+   Anatomy: open cut end at the left (cross-section with visible filling),
+   wrapped body with tortilla folds, tucked foil-free tail at the right. */
 function BurritoMeter({ eaten, max }) {
   const pct = Math.max(0, Math.min(100, (eaten / Math.max(1, max)) * 100));
   const over = eaten > max;
   const left = Math.max(0, max - eaten);
+  const ink = over ? "#FF3E8A" : "#2B1B3D";
+  /* plump body, slightly taller in the middle */
+  const BODY = "M26 48 C26 20 52 10 84 10 L164 10 C202 10 228 22 228 48 C228 74 202 86 164 86 L84 86 C52 86 26 76 26 48 Z";
   return (
     <div style={{ marginTop: 12 }}>
-      <svg viewBox="0 0 220 64" style={{ width: "100%", height: "auto", display: "block" }} role="img"
+      <svg viewBox="0 0 250 96" style={{ width: "100%", height: "auto", display: "block" }} role="img"
         aria-label={`Weekend pool: ${eaten.toLocaleString()} of ${max.toLocaleString()} calories eaten`}>
         <defs>
           <pattern id="mm-filling" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -1049,16 +1089,31 @@ function BurritoMeter({ eaten, max }) {
             <rect width="6" height="12" fill="#8C5A33" />
             <rect x="6" width="2.5" height="12" fill="#F5DE8A" />
           </pattern>
-          <clipPath id="mm-burrito"><rect x="4" y="6" width="212" height="52" rx="26" /></clipPath>
+          <clipPath id="mm-burrito"><path d={BODY} /></clipPath>
         </defs>
-        <rect x="4" y="6" width="212" height="52" rx="26" fill="#F3CE7E" />
+
+        {/* tortilla body */}
+        <path d={BODY} fill="#F3CE7E" />
+        {/* filling grows from the cut end */}
         <g clipPath="url(#mm-burrito)">
-          <rect x="4" y="6" width={(212 * pct) / 100} height="52" fill="url(#mm-filling)" style={{ transition: "width .4s ease" }} />
+          <rect x="26" y="10" width={(202 * pct) / 100} height="76" fill="url(#mm-filling)" style={{ transition: "width .4s ease" }} />
         </g>
-        <path d="M62 9 q-9 23 0 46" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".7" />
-        <path d="M112 9 q-9 23 0 46" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".7" />
-        <path d="M162 9 q-9 23 0 46" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".7" />
-        <rect x="4" y="6" width="212" height="52" rx="26" fill="none" stroke={over ? "#FF3E8A" : "#2B1B3D"} strokeWidth="3" />
+        {/* tortilla wrap folds — diagonal, like a rolled wrap */}
+        <path d="M96 11 C82 34 82 62 96 85" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
+        <path d="M138 10 C124 34 124 62 138 86" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
+        <path d="M178 11 C164 34 164 62 178 85" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
+        {/* tucked tail at the right end */}
+        <path d="M198 13 C222 20 236 32 236 48 C236 64 222 76 198 83 C214 66 214 30 198 13 Z" fill="#E2B563" stroke={ink} strokeWidth="2.5" strokeLinejoin="round" />
+        {/* body outline */}
+        <path d={BODY} fill="none" stroke={ink} strokeWidth="3" />
+        {/* open cut end: cross-section with the filling peeking out */}
+        <ellipse cx="30" cy="48" rx="15" ry="36" fill="#F3CE7E" stroke={ink} strokeWidth="3" />
+        <ellipse cx="30" cy="48" rx="10" ry="29" fill="#F9EDCB" />
+        <circle cx="27" cy="34" r="5.5" fill="#7FBF4D" />
+        <circle cx="34" cy="46" r="6" fill="#8C5A33" />
+        <circle cx="25" cy="56" r="4.5" fill="#F5DE8A" />
+        <circle cx="33" cy="63" r="4" fill="#E05043" />
+        <ellipse cx="30" cy="48" rx="10" ry="29" fill="none" stroke="#D9A94F" strokeWidth="1.5" />
       </svg>
       <div className="sub num" style={{ textAlign: "center", marginTop: 4, color: over ? "#FF3E8A" : undefined }}>
         {over
@@ -1081,7 +1136,6 @@ function Streakhouse() {
   const [profile, setProfile] = useState({ xp: 0, tokens: 0, perfect: 0, bestStreak: 0, lastRecon: null });
   const [day, setDay] = useState(emptyDay(todayStr()));
   const [loaded, setLoaded] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [managePresets, setManagePresets] = useState(false);
   const [viewPhoto, setViewPhoto] = useState(null);
   const [closeFlow, setCloseFlow] = useState(null);
@@ -1096,6 +1150,10 @@ function Streakhouse() {
   const [estimateItems, setEstimateItems] = useState(null);
   const [mealQuip, setMealQuip] = useState("");
   const [briefing, setBriefing] = useState(null);
+  const [weeklyReview, setWeeklyReview] = useState(null);
+  const [periods, setPeriods] = useState([]);
+  const [listening, setListening] = useState(false);
+  const recRef = useRef(null);
   const [editEntry, setEditEntry] = useState(null);
   const [customFoods, setCustomFoods] = useState(customLoad);
   const [labelBusy, setLabelBusy] = useState(false);
@@ -1109,6 +1167,7 @@ function Streakhouse() {
   const [stepDraft, setStepDraft] = useState("");
   const [protDraft, setProtDraft] = useState("");
   const [fibDraft, setFibDraft] = useState("");
+  const [boostDraft, setBoostDraft] = useState("0");
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoNote, setPhotoNote] = useState("");
   const fileRef = useRef(null);
@@ -1152,11 +1211,23 @@ function Streakhouse() {
       setProfile(prof);
       setDay(d && d.date === t ? d : emptyDay(t));
 
-      /* first open of a new day -> yesterday's verdict */
+      const cyc = (await sget(K.cycle)) || [];
+      setPeriods(cyc);
+
+      /* first open of a new day -> yesterday's verdict; on Mondays the
+         week-in-review takes the stage instead */
       const lastVisit = await sget(K.lastVisit);
       if (lastVisit !== t) {
         await sset(K.lastVisit, t);
-        if (lastVisit) setBriefing(buildBriefing(shiftDate(t, -1), hist, st));
+        const prevMon = weekMonday(shiftDate(t, -1));
+        if (lastVisit && dow(t) === 1 && (prof.lastWeekReview || "") !== prevMon) {
+          setCalDraft(String(st.calTarget)); setStepDraft(String(st.stepGoal));
+          setProtDraft(String(st.proteinGoal)); setFibDraft(String(st.fiberGoal));
+          setBoostDraft(String(st.weekendShift || 0));
+          setWeeklyReview(buildWeekReview(prevMon, hist, w || [], st));
+        } else if (lastVisit) {
+          setBriefing(buildBriefing(shiftDate(t, -1), hist, st));
+        }
       }
 
       setLoaded(true);
@@ -1211,10 +1282,11 @@ function Streakhouse() {
   const today = day.date;
   const poolDay = isPoolDay(today);
   const bank = bankEarned(today, history, settings, today, total);
-  const pool = 3 * settings.calTarget + bankEarned(today, history, settings, poolDay ? today : null, poolDay ? total : null);
+  const pool = poolBase(settings) + bankEarned(today, history, settings, poolDay ? today : null, poolDay ? total : null);
   const poolSpent = poolDay ? poolSpentThrough(today, history, today, total) : 0;
-  const remaining = poolDay ? pool - poolSpent : settings.calTarget - total;
-  const budgetShown = poolDay ? pool - (poolSpent - total) : settings.calTarget;
+  const dailyBudget = weekdayTarget(settings);
+  const remaining = poolDay ? pool - poolSpent : dailyBudget - total;
+  const budgetShown = poolDay ? pool - (poolSpent - total) : dailyBudget;
   const onPlanNow = onPlanCal(today, history, settings, today, total);
 
   /* ---------- weekend game plan: even split, or heavier share for chosen days ---------- */
@@ -1352,16 +1424,22 @@ function Streakhouse() {
     return { thisWeek: mk(0), lastWeek: mk(1) };
   }, [history, settings, today, total, day]);
 
+  const periodSet = useMemo(() => new Set(periods), [periods]);
+
   const pace = useMemo(() => {
-    if (weightSorted.length < 2) return null;
-    const first = weightSorted[0], last = weightSorted[weightSorted.length - 1];
+    /* period-day weigh-ins are mostly water — exclude them from the trend
+       when enough regular weigh-ins remain */
+    const filtered = weightSorted.filter((w) => !periodSet.has(w.d));
+    const src = filtered.length >= 2 ? filtered : weightSorted;
+    if (src.length < 2) return null;
+    const first = src[0], last = src[src.length - 1];
     const [y1, m1, d1] = first.d.split("-").map(Number);
     const [y2, m2, d2] = last.d.split("-").map(Number);
     const days = Math.max(1, (new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000);
     const perWeek = ((last.w - first.w) / days) * 7;
     const in30 = last.w + (perWeek / 7) * 30;
-    return { perWeek, in30 };
-  }, [weightSorted]);
+    return { perWeek, in30, excluded: weightSorted.length - src.length };
+  }, [weightSorted, periodSet]);
 
   const overlayChart = useMemo(() => {
     const wmap = Object.fromEntries(weights.map((w) => [w.d, w.w]));
@@ -1577,15 +1655,62 @@ function Streakhouse() {
   };
 
   const saveSettings = async () => {
-    const ct = parseInt(calDraft, 10), sg = parseInt(stepDraft, 10), pg = parseInt(protDraft, 10), fg = parseInt(fibDraft, 10);
+    const ct = parseInt(calDraft, 10), sg = parseInt(stepDraft, 10), pg = parseInt(protDraft, 10), fg = parseInt(fibDraft, 10), bs = parseInt(boostDraft, 10);
     const next = Object.assign({}, settings, {
       calTarget: !isNaN(ct) && ct > 0 ? ct : settings.calTarget,
       stepGoal: !isNaN(sg) && sg > 0 ? sg : settings.stepGoal,
       proteinGoal: !isNaN(pg) && pg > 0 ? pg : settings.proteinGoal,
       fiberGoal: !isNaN(fg) && fg > 0 ? fg : settings.fiberGoal,
+      weekendShift: !isNaN(bs) ? Math.max(0, Math.min(400, bs)) : (settings.weekendShift || 0),
     });
     setSettings(next); await sset(K.settings, next);
-    setShowSettings(false); setCalDraft(""); setStepDraft("");
+    return next;
+  };
+
+  const prefillGoalDrafts = () => {
+    setCalDraft(String(settings.calTarget)); setStepDraft(String(settings.stepGoal));
+    setProtDraft(String(settings.proteinGoal)); setFibDraft(String(settings.fiberGoal));
+    setBoostDraft(String(settings.weekendShift || 0));
+  };
+
+  /* ---------- week-in-review handlers ---------- */
+  const openSundayReview = () => {
+    const mon = weekMonday(today);
+    if ((profile.lastWeekReview || "") === mon) return;
+    prefillGoalDrafts();
+    setWeeklyReview(buildWeekReview(mon, history, weights, settings));
+  };
+  const closeWeekReview = async (confirm) => {
+    if (confirm) { await saveSettings(); flash("Goals locked in. New week, clean docket."); }
+    await commitProfile(Object.assign({}, profile, { lastWeekReview: weeklyReview.mon }));
+    setWeeklyReview(null);
+  };
+
+  /* ---------- period tracker ---------- */
+  const togglePeriodToday = async () => {
+    const next = periodSet.has(today) ? periods.filter((d) => d !== today) : [...periods, today].sort();
+    setPeriods(next); await sset(K.cycle, next);
+    flash(periodSet.has(today) ? "Unmarked today" : "Marked. The weight trend will account for it.");
+  };
+
+  /* ---------- voice dictation for the food field ---------- */
+  const toggleDictation = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { flash("No dictation in this browser — the keyboard 🎤 works too"); return; }
+    if (listening) { try { recRef.current && recRef.current.stop(); } catch {} return; }
+    const rec = new SR();
+    recRef.current = rec;
+    rec.lang = navigator.language || "en-US";
+    rec.interimResults = true;
+    const base = desc.trim() ? desc.trim() + " " : "";
+    rec.onresult = (e) => {
+      let text = "";
+      for (const res of e.results) text += res[0].transcript;
+      setDesc((base + text).trimStart());
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = (e) => { setListening(false); if (e.error !== "aborted" && e.error !== "no-speech") flash(`Dictation hiccup (${e.error}) — try again or type it`); };
+    try { rec.start(); setListening(true); } catch { flash("Couldn't start the microphone"); }
   };
 
   /* ---------- Close the Day ritual ---------- */
@@ -1749,9 +1874,11 @@ function Streakhouse() {
         .bar { height:12px; background:#F6EFFF; border:2px solid #2B1B3D; border-radius:7px; margin-top:12px; overflow:hidden; }
         .bar > div { height:100%; transition:width .3s ease; }
         .row { display:flex; gap:8px; margin-top:12px; }
-        input, select { font-family:inherit; font-size:15px; padding:10px 12px; border:2px solid #2B1B3D; border-radius:12px; background:#F6EFFF; width:100%; font-weight:700; color:#2B1B3D; }
-        input::placeholder { color:#A894C4; }
-        input:focus { outline:3px solid #FFC53D; outline-offset:1px; }
+        input, select, textarea { font-family:inherit; font-size:15px; padding:10px 12px; border:2px solid #2B1B3D; border-radius:12px; background:#F6EFFF; width:100%; font-weight:700; color:#2B1B3D; }
+        input::placeholder, textarea::placeholder { color:#A894C4; }
+        input:focus, textarea:focus { outline:3px solid #FFC53D; outline-offset:1px; }
+        textarea.foodbox { resize:none; line-height:1.4; min-height:76px; }
+        .micbtn { border-radius:14px; font-size:18px; padding:0 14px; flex-shrink:0; }
         button { font-family:inherit; font-weight:900; font-size:14px; border:2px solid #2B1B3D; border-radius:999px; padding:10px 16px; cursor:pointer; background:#fff; color:#2B1B3D; }
         button:focus-visible { outline:3px solid #FFC53D; outline-offset:2px; }
         button.pri { background:#7A2FF2; color:#fff; box-shadow:2px 2px 0 #2B1B3D; }
@@ -1832,7 +1959,7 @@ function Streakhouse() {
           <div className="brand">MACROS <span>&</span> MILES</div>
           <div className="datebar">
             {new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
-            <button className="gear" aria-label="Settings" onClick={() => { setShowSettings(!showSettings); setCalDraft(String(settings.calTarget)); setStepDraft(String(settings.stepGoal)); setProtDraft(String(settings.proteinGoal)); setFibDraft(String(settings.fiberGoal)); }}>⚙︎</button>
+            <button className="gear" aria-label="Settings" onClick={() => { setTab("plan"); prefillGoalDrafts(); }}>⚙︎</button>
           </div>
         </div>
         <div className="hdr-right">
@@ -1854,24 +1981,9 @@ function Streakhouse() {
         <div className="tokens" title="Rest Day tokens auto-shield a missed day">{"🛡".repeat(profile.tokens || 0)}</div>
       </div>
 
-      {showSettings && (
-        <div className="card">
-          <h2>Settings</h2>
-          <div className="row"><input inputMode="numeric" value={calDraft} onChange={(e) => setCalDraft(e.target.value)} placeholder="Daily calorie target" aria-label="Calorie target" /></div>
-          <div className="row"><input inputMode="numeric" value={stepDraft} onChange={(e) => setStepDraft(e.target.value)} placeholder="Step goal" aria-label="Step goal" /></div>
-          <div className="row">
-            <input inputMode="numeric" value={protDraft} onChange={(e) => setProtDraft(e.target.value)} placeholder="💪 Protein goal (g)" aria-label="Protein goal in grams" />
-            <input inputMode="numeric" value={fibDraft} onChange={(e) => setFibDraft(e.target.value)} placeholder="🥦 Fiber goal (g)" aria-label="Fiber goal in grams" />
-          </div>
-          <div className="row"><button className="pri" onClick={saveSettings}>Save settings</button><button onClick={() => setShowSettings(false)}>Cancel</button></div>
-          <div className="row"><button onClick={exportData}>Export backup (JSON)</button></div>
-          <div className="sub" style={{ marginTop: 10 }}>Weekly budget = daily target × 7. Mon–Thu surplus banks into the Fri–Sun pool. Every 7 perfect days earns a 🛡 Rest Day token (max 3) that auto-shields a miss.</div>
-        </div>
-      )}
-
       <div className="tabs" role="tablist">
-        {["today", "trends", "photos"].map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} className={`tabbtn ${tab === t ? "on" : ""}`} onClick={() => setTab(t)}>{t}</button>
+        {["today", "trends", "photos", "plan"].map((t) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={`tabbtn ${tab === t ? "on" : ""}`} onClick={() => { setTab(t); if (t === "plan") prefillGoalDrafts(); }}>{t}</button>
         ))}
       </div>
 
@@ -1899,7 +2011,7 @@ function Streakhouse() {
               {remaining < 0 ? `+${Math.abs(remaining)}` : remaining.toLocaleString()}
             </div>
             <div className="sub num">
-              {remaining < 0 ? "over" : "remaining"} · {poolDay ? `${poolSpent.toLocaleString()} / ${pool.toLocaleString()} pool · today so far: ${total.toLocaleString()}` : `${total} / ${settings.calTarget} today`}
+              {remaining < 0 ? "over" : "remaining"} · {poolDay ? `${poolSpent.toLocaleString()} / ${pool.toLocaleString()} pool · today so far: ${total.toLocaleString()}` : `${total} / ${dailyBudget} today`}
             </div>
             {!poolDay && remaining < 0 && (
               <div className="sub" style={{ color: "#FF3E8A" }}>Over budget. Log it anyway — data doesn't judge, it just testifies later. The 7-day score barely felt that.</div>
@@ -1911,7 +2023,7 @@ function Streakhouse() {
             )}
 
             {!poolDay && (
-              <div className="bank num">🏦 Banked for the weekend: {bank.toLocaleString()} cal{total > 0 && total < settings.calTarget ? ` (includes ${settings.calTarget - total} pending today)` : ""}</div>
+              <div className="bank num">🏦 Banked for the weekend: {bank.toLocaleString()} cal{total > 0 && total < dailyBudget ? ` (includes ${dailyBudget - total} pending today)` : ""}</div>
             )}
             {poolDay && bank > 0 && (
               <div className="bank num">🏦 Your Mon–Thu banking added {bankEarned(today, history, settings, null, null).toLocaleString()} cal to this pool. Date night is pre-funded.</div>
@@ -1955,9 +2067,14 @@ function Streakhouse() {
               <div role="button" tabIndex={0} className={`pip ${wins.evening ? "filled" : ""}`} onClick={() => foodInputRef.current && foodInputRef.current.focus()}>evening</div>
             </div>
 
-            <div className="row">
-              <input ref={foodInputRef} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={foodPh} aria-label="Food description" onKeyDown={(e) => e.key === "Enter" && submitFood()} />
+            <div className="row" style={{ alignItems: "stretch" }}>
+              <textarea ref={foodInputRef} rows={3} className="foodbox" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={foodPh} aria-label="Food description"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitFood(); } }} />
+              <button className={`micbtn ${listening ? "ember" : ""}`} aria-label={listening ? "Stop dictation" : "Dictate food description"} aria-pressed={listening} onClick={toggleDictation}>
+                {listening ? "◼" : "🎤"}
+              </button>
             </div>
+            {listening && <div className="note">Listening… speak the meal, tap ◼ when done.</div>}
             <div className="row">
               <input inputMode="numeric" value={calInput} onChange={(e) => setCalInput(e.target.value)} placeholder="cal" aria-label="Calories" />
               <input inputMode="numeric" value={protInput} onChange={(e) => setProtInput(e.target.value)} placeholder="💪g" aria-label="Protein grams" />
@@ -2216,12 +2333,19 @@ function Streakhouse() {
                     <XAxis dataKey="d" tick={{ fontSize: 11, fontWeight: 600 }} />
                     <YAxis domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 11, fontWeight: 600 }} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="w" stroke="#7A2FF2" strokeWidth={2.5} dot={{ r: 3, fill: "#7A2FF2" }} />
+                    <Line type="monotone" dataKey="w" stroke="#7A2FF2" strokeWidth={2.5} dot={(p) => {
+                      if (p.cx == null || p.cy == null) return null;
+                      const isPd = periodSet.has(p.payload.ds);
+                      return <circle key={p.payload.ds} cx={p.cx} cy={p.cy} r={isPd ? 4.5 : 3} fill={isPd ? "#FF3E8A" : "#7A2FF2"} stroke={isPd ? "#2B1B3D" : "none"} strokeWidth={isPd ? 1.5 : 0} />;
+                    }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             ) : (
               <div className="empty" style={{ marginTop: 10 }}>Two or more weigh-ins and the trend line appears. Weekly is plenty — daily noise is mostly water.</div>
+            )}
+            {weightChart.some((w) => periodSet.has(w.ds)) && (
+              <div className="sub" style={{ marginTop: 6 }}>🔴 Pink dots are period-day weigh-ins — expected to run high; the pace math skips them.</div>
             )}
           </div>
 
@@ -2247,7 +2371,7 @@ function Streakhouse() {
                   <div className="bignum num" style={{ fontSize: 32, color: pace.perWeek <= 0 ? "#00B3A4" : "#FF3E8A" }}>
                     {pace.perWeek <= 0 ? "" : "+"}{pace.perWeek.toFixed(1)}/week
                   </div>
-                  <div className="sub num">At this rate: {pace.in30.toFixed(1)} in 30 days. Trend, not prophecy — the trend responds to inputs.</div>
+                  <div className="sub num">At this rate: {pace.in30.toFixed(1)} in 30 days. Trend, not prophecy — the trend responds to inputs.{pace.excluded > 0 ? ` (${pace.excluded} period-day weigh-in${pace.excluded === 1 ? "" : "s"} excluded — that's water, not trend.)` : ""}</div>
                 </React.Fragment>
               ) : (
                 <div className="empty">Needs two or more weigh-ins to compute a rate.</div>
@@ -2287,7 +2411,7 @@ function Streakhouse() {
                   <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 600 }} interval={2} />
                   <YAxis tick={{ fontSize: 10, fontWeight: 600 }} />
                   <Tooltip />
-                  <ReferenceLine y={settings.calTarget} stroke="#FF3E8A" strokeDasharray="4 4" strokeWidth={2} />
+                  <ReferenceLine y={weekdayTarget(settings)} stroke="#FF3E8A" strokeDasharray="4 4" strokeWidth={2} />
                   <Bar dataKey="cal" fill="#7A2FF2" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -2367,6 +2491,111 @@ function Streakhouse() {
             </div>
           )}
         </React.Fragment>
+      )}
+
+      {tab === "plan" && (
+        <React.Fragment>
+          <div className="card">
+            <h2>Goals</h2>
+            <div className="qdesc">Daily calorie target (weekly budget = this × 7)</div>
+            <div className="row" style={{ marginTop: 4 }}><input inputMode="numeric" value={calDraft} onChange={(e) => setCalDraft(e.target.value)} placeholder="Daily calorie target" aria-label="Calorie target" /></div>
+            <div className="qdesc" style={{ marginTop: 10 }}>Step goal</div>
+            <div className="row" style={{ marginTop: 4 }}><input inputMode="numeric" value={stepDraft} onChange={(e) => setStepDraft(e.target.value)} placeholder="Step goal" aria-label="Step goal" /></div>
+            <div className="qdesc" style={{ marginTop: 10 }}>💪 Protein and 🥦 fiber goals (grams)</div>
+            <div className="row" style={{ marginTop: 4 }}>
+              <input inputMode="numeric" value={protDraft} onChange={(e) => setProtDraft(e.target.value)} placeholder="💪 Protein (g)" aria-label="Protein goal in grams" />
+              <input inputMode="numeric" value={fibDraft} onChange={(e) => setFibDraft(e.target.value)} placeholder="🥦 Fiber (g)" aria-label="Fiber goal in grams" />
+            </div>
+            <div className="qname" style={{ marginTop: 16 }}>Weekend budgeting</div>
+            <div className="qdesc">Run Mon–Thu leaner and pre-fund the Fri–Sun pool. The weekly total stays the same.</div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <select value={boostDraft} onChange={(e) => setBoostDraft(e.target.value)} aria-label="Weekend boost">
+                <option value="0">Even — same budget every day</option>
+                <option value="100">Shift 100/day from Mon–Thu (+400 weekend)</option>
+                <option value="150">Shift 150/day from Mon–Thu (+600 weekend)</option>
+                <option value="200">Shift 200/day from Mon–Thu (+800 weekend)</option>
+                <option value="300">Shift 300/day from Mon–Thu (+1,200 weekend)</option>
+              </select>
+            </div>
+            <div className="qdesc" style={{ marginTop: 8 }}>Within the weekend, tap the days that run heaviest:</div>
+            <div className="pips" aria-label="Tap days to give them a heavier share of the weekend pool">
+              {[{ w: 5, n: "Fri" }, { w: 6, n: "Sat" }, { w: 0, n: "Sun" }].map((d) => (
+                <div key={d.w} role="button" tabIndex={0} aria-pressed={heavyDays.includes(d.w)} className={`pip ${heavyDays.includes(d.w) ? "heavy" : ""}`} onClick={() => toggleHeavyDay(d.w)}>
+                  {heavyDays.includes(d.w) ? "🔥 " : ""}{d.n}
+                </div>
+              ))}
+            </div>
+            <div className="row"><button className="pri" style={{ width: "100%" }} onClick={async () => { const s = await saveSettings(); flash(`Saved. Mon–Thu ${weekdayTarget(s)} cal · weekend pool ${poolBase(s).toLocaleString()}+bank`); }}>Save goals</button></div>
+            <div className="sub" style={{ marginTop: 10 }}>Mon–Thu surplus still banks into the weekend pool on top of any shift. Every 7 perfect days earns a 🛡 Rest Day token (max 3) that auto-shields a miss.</div>
+          </div>
+
+          <div className="card">
+            <h2>Period tracker</h2>
+            <div className="sub">Mark period days and the weight trend accounts for them: marked weigh-ins show in pink on the chart and the pace projection skips them, so water-weight days don't read as setbacks.</div>
+            <div className="row">
+              <button className={periodSet.has(today) ? "ember" : ""} style={{ width: "100%" }} onClick={togglePeriodToday}>
+                {periodSet.has(today) ? "🔴 Marked — tap to unmark today" : "🔴 Mark today as a period day"}
+              </button>
+            </div>
+            {periods.length > 0 && (
+              <div className="chips">
+                {[...periods].reverse().slice(0, 10).map((d) => (
+                  <div key={d} className="chip" onClick={async () => { const next = periods.filter((x) => x !== d); setPeriods(next); await sset(K.cycle, next); }}>
+                    {shortDate(d)} <span className="x">×</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h2>Backup</h2>
+            <div className="sub">All data lives on this phone only. Export occasionally and keep the file somewhere safe.</div>
+            <div className="row"><button style={{ width: "100%" }} onClick={exportData}>Export backup (JSON)</button></div>
+          </div>
+        </React.Fragment>
+      )}
+
+      {/* ---------- Week in review: Sunday night & Monday morning ---------- */}
+      {weeklyReview && (
+        <div className="sheet" onClick={() => closeWeekReview(false)}>
+          <div className="sheet-inner" onClick={(e) => e.stopPropagation()}>
+            <div className="stepno">Week in review · {shortDate(weeklyReview.mon)}–{shortDate(weeklyReview.sun)}</div>
+            <h3>{weeklyReview.verdict}</h3>
+            <div style={{ marginTop: 6 }}>
+              <div className="xpline"><span>Days logged</span><span className="num">{weeklyReview.logged}/7</span></div>
+              <div className="xpline"><span>Avg daily calories</span><span className="num">{weeklyReview.avgCal.toLocaleString()}</span></div>
+              <div className="xpline"><span>Days on plan</span><span className="num">{weeklyReview.onPlanDays}</span></div>
+              <div className="xpline"><span>Total steps</span><span className="num">{weeklyReview.steps.toLocaleString()} · goal hit {weeklyReview.stepDays}×</span></div>
+              <div className="xpline"><span>💪 protein / 🥦 fiber days</span><span className="num">{weeklyReview.protDays} / {weeklyReview.fibDays}</span></div>
+              {weeklyReview.wDelta !== null && (
+                <div className="xpline"><span>Weight over the week</span><span className="num" style={{ color: weeklyReview.wDelta <= 0 ? "#00B3A4" : "#7A6B8E" }}>{weeklyReview.wDelta > 0 ? "+" : ""}{weeklyReview.wDelta}</span></div>
+              )}
+            </div>
+            <div className="qname" style={{ marginTop: 14 }}>Reconfirm this week's goals</div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <input inputMode="numeric" value={calDraft} onChange={(e) => setCalDraft(e.target.value)} placeholder="cal/day" aria-label="Calorie target" />
+              <input inputMode="numeric" value={stepDraft} onChange={(e) => setStepDraft(e.target.value)} placeholder="steps" aria-label="Step goal" />
+            </div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <input inputMode="numeric" value={protDraft} onChange={(e) => setProtDraft(e.target.value)} placeholder="💪g" aria-label="Protein goal in grams" />
+              <input inputMode="numeric" value={fibDraft} onChange={(e) => setFibDraft(e.target.value)} placeholder="🥦g" aria-label="Fiber goal in grams" />
+            </div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <select value={boostDraft} onChange={(e) => setBoostDraft(e.target.value)} aria-label="Weekend boost">
+                <option value="0">Even budget every day</option>
+                <option value="100">Shift 100/day to the weekend</option>
+                <option value="150">Shift 150/day to the weekend</option>
+                <option value="200">Shift 200/day to the weekend</option>
+                <option value="300">Shift 300/day to the weekend</option>
+              </select>
+            </div>
+            <div className="row">
+              <button className="pri" style={{ flex: 1 }} onClick={() => closeWeekReview(true)}>Lock in goals →</button>
+              <button onClick={() => closeWeekReview(false)}>Keep as is</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ---------- Morning briefing: yesterday's verdict ---------- */}
@@ -2455,7 +2684,7 @@ function Streakhouse() {
                 {closeFlow.reveal.tokenEarned && <div className="note" style={{ color: "#00B3A4" }}>🛡 Rest Day token earned — 7 perfect days banked one automatic shield.</div>}
                 {closeFlow.reveal.levelUp && <div className="note" style={{ color: "#7A2FF2" }}>LEVEL {closeFlow.reveal.levelUp} — new analytics unlocked in Trends.</div>}
                 <div className="evidence">{closeFlow.reveal.evidence}</div>
-                <div className="row"><button className="pri" style={{ width: "100%" }} onClick={() => setCloseFlow(null)}>Done</button></div>
+                <div className="row"><button className="pri" style={{ width: "100%" }} onClick={() => { setCloseFlow(null); if (dow(today) === 0) openSundayReview(); }}>Done</button></div>
               </React.Fragment>
             )}
           </div>
