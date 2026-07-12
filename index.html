@@ -1077,11 +1077,18 @@ function BurritoMeter({ eaten, max }) {
   const over = eaten > max;
   const left = Math.max(0, max - eaten);
   const ink = over ? "#FF3E8A" : "#2B1B3D";
-  /* plump body, slightly taller in the middle */
-  const BODY = "M26 48 C26 20 52 10 84 10 L164 10 C202 10 228 22 228 48 C228 74 202 86 164 86 L84 86 C52 86 26 76 26 48 Z";
+  const nearFull = pct >= 90;
+
+  /* upright burrito: tortilla tube standing in a peeled foil wrap.
+     The filling rises inside; near the top it peeks over the rim,
+     over budget it oozes down the outside. */
+  const TOP = 42, BOT = 192;                    /* interior fill range (y) */
+  const level = BOT - ((BOT - TOP) * pct) / 100; /* current filling surface */
+  const BODY = "M42 44 C42 26 54 18 71 18 C88 18 100 26 100 44 L100 172 C100 188 88 196 71 196 C54 196 42 188 42 172 Z";
+
   return (
     <div style={{ marginTop: 12 }}>
-      <svg viewBox="0 0 250 96" style={{ width: "100%", height: "auto", display: "block" }} role="img"
+      <svg viewBox="0 0 142 226" style={{ width: 150, maxWidth: "45%", height: "auto", display: "block", margin: "0 auto" }} role="img"
         aria-label={`Weekend pool: ${eaten.toLocaleString()} of ${max.toLocaleString()} calories eaten`}>
         <defs>
           <pattern id="mm-filling" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -1092,32 +1099,64 @@ function BurritoMeter({ eaten, max }) {
           <clipPath id="mm-burrito"><path d={BODY} /></clipPath>
         </defs>
 
-        {/* tortilla body */}
+        {/* tortilla tube */}
         <path d={BODY} fill="#F3CE7E" />
-        {/* filling grows from the cut end */}
+        {/* open top: looking down into the wrap */}
+        <ellipse cx="71" cy="34" rx="26" ry="9.5" fill="#C9973F" />
+        {/* the filling, rising toward the rim */}
         <g clipPath="url(#mm-burrito)">
-          <rect x="26" y="10" width={(202 * pct) / 100} height="76" fill="url(#mm-filling)" style={{ transition: "width .4s ease" }} />
+          <rect x="42" y={level} width="58" height={BOT - level + 8} fill="url(#mm-filling)" style={{ transition: "y .4s ease, height .4s ease" }} />
+          <ellipse cx="71" cy={level} rx="26" ry="8" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.5" style={{ transition: "cy .4s ease" }} />
+          {pct > 4 && <circle cx="62" cy={level - 1.5} r="4" fill="#E05043" />}
+          {pct > 4 && <circle cx="80" cy={level + 1} r="3.5" fill="#8C5A33" />}
+          {pct > 4 && <circle cx="71" cy={level - 3} r="3" fill="#F5DE8A" />}
         </g>
-        {/* tortilla wrap folds — diagonal, like a rolled wrap */}
-        <path d="M96 11 C82 34 82 62 96 85" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
-        <path d="M138 10 C124 34 124 62 138 86" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
-        <path d="M178 11 C164 34 164 62 178 85" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
-        {/* tucked tail at the right end */}
-        <path d="M198 13 C222 20 236 32 236 48 C236 64 222 76 198 83 C214 66 214 30 198 13 Z" fill="#E2B563" stroke={ink} strokeWidth="2.5" strokeLinejoin="round" />
-        {/* body outline */}
-        <path d={BODY} fill="none" stroke={ink} strokeWidth="3" />
-        {/* open cut end: cross-section with the filling peeking out */}
-        <ellipse cx="30" cy="48" rx="15" ry="36" fill="#F3CE7E" stroke={ink} strokeWidth="3" />
-        <ellipse cx="30" cy="48" rx="10" ry="29" fill="#F9EDCB" />
-        <circle cx="27" cy="34" r="5.5" fill="#7FBF4D" />
-        <circle cx="34" cy="46" r="6" fill="#8C5A33" />
-        <circle cx="25" cy="56" r="4.5" fill="#F5DE8A" />
-        <circle cx="33" cy="63" r="4" fill="#E05043" />
-        <ellipse cx="30" cy="48" rx="10" ry="29" fill="none" stroke="#D9A94F" strokeWidth="1.5" />
+        {/* horizontal roll creases on the tortilla */}
+        <path d="M45 74 C58 80 84 80 97 74" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
+        <path d="M44 104 C58 110 84 110 98 104" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
+
+        {/* peeled foil wrapping the bottom half, points sticking out */}
+        <path d="M34 126 L48 116 L58 128 L71 114 L84 128 L94 116 L108 126 L108 182 C108 200 92 208 71 208 C50 208 34 200 34 182 Z"
+          fill="#E7EAF0" fillOpacity=".55" stroke={ink} strokeWidth="3" strokeLinejoin="round" />
+        <path d="M34 124 L16 108 L30 134 Z" fill="#DDE1E9" stroke={ink} strokeWidth="2.5" strokeLinejoin="round" />
+        <path d="M108 124 L126 106 L112 134 Z" fill="#DDE1E9" stroke={ink} strokeWidth="2.5" strokeLinejoin="round" />
+        {/* foil crinkle facets */}
+        <path d="M52 132 L60 152 L50 170 L62 192" stroke="#AEB6C4" strokeWidth="2" fill="none" />
+        <path d="M88 130 L80 150 L92 168 L80 194" stroke="#AEB6C4" strokeWidth="2" fill="none" />
+        <path d="M70 136 L66 158 L74 176" stroke="#AEB6C4" strokeWidth="2" fill="none" />
+
+        {/* tortilla outline above the foil */}
+        <path d="M42 126 L42 44 C42 26 54 18 71 18 C88 18 100 26 100 44 L100 126" fill="none" stroke={ink} strokeWidth="3" />
+        {/* rim */}
+        <path d="M45 34 C45 22 56 15.5 71 15.5 C86 15.5 97 22 97 34" fill="none" stroke={ink} strokeWidth="3" />
+        <ellipse cx="71" cy="34" rx="26" ry="9.5" fill="none" stroke={ink} strokeWidth="3" />
+
+        {/* near the top: filling peeks over the rim */}
+        {(nearFull || over) && (
+          <g>
+            <circle cx="58" cy="26" r="6" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.5" />
+            <circle cx="72" cy="23" r="5.5" fill="#E05043" stroke="#2B1B3D" strokeWidth="1.5" />
+            <circle cx="85" cy="26" r="5" fill="#8C5A33" stroke="#2B1B3D" strokeWidth="1.5" />
+          </g>
+        )}
+        {/* over budget: the fillings make a run for it */}
+        {over && (
+          <g>
+            <path d="M46 30 C40 40 42 52 47 60 C52 66 50 74 46 78 C54 74 56 62 51 52 C47 44 48 36 52 30 Z" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M96 32 C102 42 100 54 96 64 C100 62 106 50 102 40 C100 35 98 33 96 32 Z" fill="#E05043" stroke="#2B1B3D" strokeWidth="1.5" strokeLinejoin="round" />
+            <circle cx="47" cy="86" r="3.5" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.2" />
+            <circle cx="100" cy="72" r="3" fill="#8C5A33" stroke="#2B1B3D" strokeWidth="1.2" />
+            <circle cx="62" cy="8" r="3.5" fill="#F5DE8A" stroke="#2B1B3D" strokeWidth="1.2" />
+            <circle cx="86" cy="6" r="3" fill="#E05043" stroke="#2B1B3D" strokeWidth="1.2" />
+            <circle cx="112" cy="16" r="2.5" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.2" />
+          </g>
+        )}
       </svg>
       <div className="sub num" style={{ textAlign: "center", marginTop: 4, color: over ? "#FF3E8A" : undefined }}>
         {over
-          ? `🌯💥 overstuffed by ${(eaten - max).toLocaleString()} cal — the wrap did its best`
+          ? `🌯💥 overstuffed by ${(eaten - max).toLocaleString()} cal — the filling is making a run for it`
+          : nearFull
+          ? `🌯 ${Math.round(pct)}% full — ${left.toLocaleString()} cal to the rim, easy does it`
           : `🌯 ${Math.round(pct)}% of the weekend burrito eaten · ${left.toLocaleString()} cal still in the wrap`}
       </div>
     </div>
