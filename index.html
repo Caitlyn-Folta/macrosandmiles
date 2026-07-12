@@ -1076,79 +1076,101 @@ function BurritoMeter({ eaten, max }) {
   const pct = Math.max(0, Math.min(100, (eaten / Math.max(1, max)) * 100));
   const over = eaten > max;
   const left = Math.max(0, max - eaten);
-  const ink = over ? "#FF3E8A" : "#2B1B3D";
   const nearFull = pct >= 90;
 
-  /* upright burrito: tortilla tube standing in a peeled foil wrap.
-     The filling rises inside; near the top it peeks over the rim,
-     over budget it oozes down the outside. */
-  const TOP = 42, BOT = 192;                    /* interior fill range (y) */
-  const level = BOT - ((BOT - TOP) * pct) / 100; /* current filling surface */
-  const BODY = "M42 44 C42 26 54 18 71 18 C88 18 100 26 100 44 L100 172 C100 188 88 196 71 196 C54 196 42 188 42 172 Z";
+  /* Flat low-poly style, recreating the "foil-wrapped burrito" reference:
+     faceted silver foil holding a cream tortilla, top torn open showing
+     the filling, which rises toward the rim as the pool is eaten.
+     No ink outlines — the reference art is flat. */
+  const t = pct / 100;
+  const lerp = (a, b) => a + (b - a) * t;
+  const fillCy = lerp(103, 74);  /* filling surface rises from deep in the wrap to the rim */
+  const fillRx = lerp(40, 68);
+  const fillRy = lerp(11, 25);
 
   return (
     <div style={{ marginTop: 12 }}>
-      <svg viewBox="0 0 142 226" style={{ width: 150, maxWidth: "45%", height: "auto", display: "block", margin: "0 auto" }} role="img"
+      <svg viewBox="0 0 260 330" style={{ width: 172, maxWidth: "52%", height: "auto", display: "block", margin: "0 auto" }} role="img"
         aria-label={`Weekend pool: ${eaten.toLocaleString()} of ${max.toLocaleString()} calories eaten`}>
         <defs>
-          <pattern id="mm-filling" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width="12" height="12" fill="#7FBF4D" />
-            <rect width="6" height="12" fill="#8C5A33" />
-            <rect x="6" width="2.5" height="12" fill="#F5DE8A" />
-          </pattern>
-          <clipPath id="mm-burrito"><path d={BODY} /></clipPath>
+          <clipPath id="mm-fillsurf"><ellipse cx="130" cy={fillCy} rx={fillRx} ry={fillRy} /></clipPath>
         </defs>
 
-        {/* tortilla tube */}
-        <path d={BODY} fill="#F3CE7E" />
-        {/* open top: looking down into the wrap */}
-        <ellipse cx="71" cy="34" rx="26" ry="9.5" fill="#C9973F" />
-        {/* the filling, rising toward the rim */}
-        <g clipPath="url(#mm-burrito)">
-          <rect x="42" y={level} width="58" height={BOT - level + 8} fill="url(#mm-filling)" style={{ transition: "y .4s ease, height .4s ease" }} />
-          <ellipse cx="71" cy={level} rx="26" ry="8" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.5" style={{ transition: "cy .4s ease" }} />
-          {pct > 4 && <circle cx="62" cy={level - 1.5} r="4" fill="#E05043" />}
-          {pct > 4 && <circle cx="80" cy={level + 1} r="3.5" fill="#8C5A33" />}
-          {pct > 4 && <circle cx="71" cy={level - 3} r="3" fill="#F5DE8A" />}
+        {/* ---- tortilla: back rim ---- */}
+        <ellipse cx="130" cy="80" rx="76" ry="31" fill="#F2E8D5" />
+        {/* interior depth */}
+        <ellipse cx="130" cy="82" rx="66" ry="25" fill="#8A6B3F" />
+        <ellipse cx="130" cy="84" rx="58" ry="21" fill="#6E5430" />
+
+        {/* ---- the filling surface, rising ---- */}
+        <ellipse cx="130" cy={fillCy} rx={fillRx} ry={fillRy} fill="#6FBF4A" />
+        <g clipPath="url(#mm-fillsurf)">
+          <g transform={`translate(0 ${fillCy - 86})`}>
+            <polygon points="96,84 116,78 110,98" fill="#8C5A33" />
+            <polygon points="128,70 146,76 136,92" fill="#E05043" />
+            <polygon points="150,84 170,80 162,98" fill="#F5DE8A" />
+            <polygon points="112,92 130,88 124,104" fill="#F5DE8A" />
+            <polygon points="138,94 156,92 148,106" fill="#8C5A33" />
+            <polygon points="82,90 98,94 88,104" fill="#5AA83B" />
+            <polygon points="160,70 176,74 168,86" fill="#5AA83B" />
+          </g>
         </g>
-        {/* horizontal roll creases on the tortilla */}
-        <path d="M45 74 C58 80 84 80 97 74" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
-        <path d="M44 104 C58 110 84 110 98 104" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".75" />
 
-        {/* peeled foil wrapping the bottom half, points sticking out */}
-        <path d="M34 126 L48 116 L58 128 L71 114 L84 128 L94 116 L108 126 L108 182 C108 200 92 208 71 208 C50 208 34 200 34 182 Z"
-          fill="#E7EAF0" fillOpacity=".55" stroke={ink} strokeWidth="3" strokeLinejoin="round" />
-        <path d="M34 124 L16 108 L30 134 Z" fill="#DDE1E9" stroke={ink} strokeWidth="2.5" strokeLinejoin="round" />
-        <path d="M108 124 L126 106 L112 134 Z" fill="#DDE1E9" stroke={ink} strokeWidth="2.5" strokeLinejoin="round" />
-        {/* foil crinkle facets */}
-        <path d="M52 132 L60 152 L50 170 L62 192" stroke="#AEB6C4" strokeWidth="2" fill="none" />
-        <path d="M88 130 L80 150 L92 168 L80 194" stroke="#AEB6C4" strokeWidth="2" fill="none" />
-        <path d="M70 136 L66 158 L74 176" stroke="#AEB6C4" strokeWidth="2" fill="none" />
+        {/* ---- tortilla: front wall (covers lower half of the opening) ---- */}
+        <path d="M56 88 C58 122 60 142 60 168 L200 168 C200 142 202 122 204 88 C182 110 78 110 56 88 Z" fill="#F2E8D5" />
+        {/* front lip shading + flat fold facets */}
+        <path d="M56 88 C78 110 182 110 204 88 C182 104 78 104 56 88 Z" fill="#E3D5B8" />
+        <polygon points="92,106 106,107 100,166 84,166" fill="#E9DDC4" />
+        <polygon points="142,107 156,106 166,166 150,166" fill="#E9DDC4" />
+        <polygon points="60,140 200,140 200,168 60,168" fill="#DCCDAF" opacity=".55" />
 
-        {/* tortilla outline above the foil */}
-        <path d="M42 126 L42 44 C42 26 54 18 71 18 C88 18 100 26 100 44 L100 126" fill="none" stroke={ink} strokeWidth="3" />
-        {/* rim */}
-        <path d="M45 34 C45 22 56 15.5 71 15.5 C86 15.5 97 22 97 34" fill="none" stroke={ink} strokeWidth="3" />
-        <ellipse cx="71" cy="34" rx="26" ry="9.5" fill="none" stroke={ink} strokeWidth="3" />
+        {/* ---- foil: peeled points behind ---- */}
+        <polygon points="52,172 22,128 66,182" fill="#C6CCD6" />
+        <polygon points="52,172 34,146 62,180" fill="#EDF0F4" />
+        <polygon points="208,170 238,126 194,180" fill="#C6CCD6" />
+        <polygon points="208,170 226,144 198,178" fill="#EDF0F4" />
 
-        {/* near the top: filling peeks over the rim */}
+        {/* ---- foil: faceted body ---- */}
+        <path d="M46 170 L74 156 L100 172 L130 154 L160 172 L186 156 L214 170 L220 210 L216 268 L198 300 L156 314 L104 314 L62 300 L44 268 L40 210 Z" fill="#C9CFD9" />
+        <polygon points="46,170 74,156 72,206" fill="#EDF0F4" />
+        <polygon points="74,156 100,172 72,206" fill="#AEB5C2" />
+        <polygon points="100,172 130,154 128,208" fill="#DDE2E9" />
+        <polygon points="100,172 128,208 72,206" fill="#C0C6D1" />
+        <polygon points="130,154 160,172 128,208" fill="#F4F6F9" />
+        <polygon points="160,172 186,156 188,206" fill="#B8BFCB" />
+        <polygon points="160,172 188,206 128,208" fill="#D5DAE2" />
+        <polygon points="186,156 214,170 188,206" fill="#E8EBF0" />
+        <polygon points="40,210 72,206 66,262" fill="#B4BBC7" />
+        <polygon points="72,206 128,208 100,264" fill="#E4E8EE" />
+        <polygon points="72,206 100,264 66,262" fill="#CBD1DA" />
+        <polygon points="128,208 188,206 160,262" fill="#BFC6D1" />
+        <polygon points="128,208 160,262 100,264" fill="#F0F2F6" />
+        <polygon points="188,206 220,210 216,268 160,262" fill="#D8DDE4" />
+        <polygon points="40,210 66,262 44,268" fill="#DDE2E9" />
+        <polygon points="44,268 66,262 100,264 104,314 62,300" fill="#AEB5C2" />
+        <polygon points="100,264 160,262 156,314 104,314" fill="#D2D7E0" />
+        <polygon points="160,262 216,268 198,300 156,314" fill="#C2C8D3" />
+
+        {/* ---- near the rim: filling peeks over ---- */}
         {(nearFull || over) && (
           <g>
-            <circle cx="58" cy="26" r="6" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.5" />
-            <circle cx="72" cy="23" r="5.5" fill="#E05043" stroke="#2B1B3D" strokeWidth="1.5" />
-            <circle cx="85" cy="26" r="5" fill="#8C5A33" stroke="#2B1B3D" strokeWidth="1.5" />
+            <polygon points="88,58 108,52 102,70" fill="#6FBF4A" />
+            <polygon points="122,48 140,52 130,66" fill="#E05043" />
+            <polygon points="152,54 170,58 158,70" fill="#F5DE8A" />
           </g>
         )}
-        {/* over budget: the fillings make a run for it */}
+
+        {/* ---- over budget: the fillings make a run for it ---- */}
         {over && (
           <g>
-            <path d="M46 30 C40 40 42 52 47 60 C52 66 50 74 46 78 C54 74 56 62 51 52 C47 44 48 36 52 30 Z" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.5" strokeLinejoin="round" />
-            <path d="M96 32 C102 42 100 54 96 64 C100 62 106 50 102 40 C100 35 98 33 96 32 Z" fill="#E05043" stroke="#2B1B3D" strokeWidth="1.5" strokeLinejoin="round" />
-            <circle cx="47" cy="86" r="3.5" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.2" />
-            <circle cx="100" cy="72" r="3" fill="#8C5A33" stroke="#2B1B3D" strokeWidth="1.2" />
-            <circle cx="62" cy="8" r="3.5" fill="#F5DE8A" stroke="#2B1B3D" strokeWidth="1.2" />
-            <circle cx="86" cy="6" r="3" fill="#E05043" stroke="#2B1B3D" strokeWidth="1.2" />
-            <circle cx="112" cy="16" r="2.5" fill="#7FBF4D" stroke="#2B1B3D" strokeWidth="1.2" />
+            <path d="M66 92 C60 116 64 138 70 158 C74 172 70 186 64 194 C76 186 80 166 74 144 C70 126 70 106 76 92 Z" fill="#6FBF4A" />
+            <path d="M192 96 C198 118 196 140 190 158 C196 152 204 132 200 112 C198 102 195 97 192 96 Z" fill="#E05043" />
+            <ellipse cx="63" cy="204" rx="7" ry="5" fill="#6FBF4A" />
+            <ellipse cx="199" cy="170" rx="6" ry="4" fill="#E05043" />
+            <polygon points="96,26 110,22 104,38" fill="#F5DE8A" />
+            <polygon points="148,20 162,26 152,36" fill="#6FBF4A" />
+            <polygon points="180,34 192,30 188,44" fill="#E05043" />
+            <circle cx="70" cy="40" r="4" fill="#8C5A33" />
           </g>
         )}
       </svg>
