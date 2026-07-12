@@ -70,7 +70,15 @@
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }));
+  /* when an updated service worker takes over, reload once so the new
+     version appears on THIS open instead of after two open/close cycles */
+  let swRefreshed = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (swRefreshed || !navigator.serviceWorker.controller) return;
+    swRefreshed = true;
+    window.location.reload();
+  });
 }
 </script>
 
@@ -103,6 +111,7 @@ const K = {
   weight: "sh:weight",
   photoIndex: "sh:photoIndex",
   profile: "sh:profile",
+  lastVisit: "sh:lastVisit",
   day: (d) => "sh:day:" + d,
   photo: (d) => "sh:photo:" + d,
 };
@@ -436,6 +445,23 @@ const FOOD_DB = [
   { k: ["seltzer", "white claw"], c: 100, p: 0, f: 0, ml: 355, liquid: true },
   { k: ["shot", "tequila"], c: 100, p: 0, f: 0, ml: 44, liquid: true },
   { k: ["soda", "coke"], c: 140, p: 0, f: 0, ml: 355, liquid: true },
+  { k: ["light mayo", "low fat mayo", "lite mayo", "reduced fat mayo"], c: 35, p: 0, f: 0, g: 15 },
+  { k: ["mayo", "mayonnaise"], c: 90, p: 0, f: 0, g: 13 },
+  { k: ["ketchup"], c: 20, p: 0, f: 0, g: 17 },
+  { k: ["mustard"], c: 5, p: 0, f: 0, g: 5 },
+  { k: ["ranch"], c: 65, p: 0, f: 0, g: 15 },
+  { k: ["butter"], c: 100, p: 0, f: 0, g: 14 },
+  { k: ["olive oil", "avocado oil", "vegetable oil", "cooking oil"], c: 120, p: 0, f: 0, g: 14 },
+  { k: ["sour cream"], c: 60, p: 1, f: 0, g: 30 },
+  { k: ["half and half", "creamer"], c: 40, p: 1, f: 0, ml: 30, liquid: true },
+  { k: ["almond milk"], c: 35, p: 1, f: 0, ml: 240, liquid: true },
+  { k: ["oat milk"], c: 120, p: 3, f: 2, ml: 240, liquid: true },
+  { k: ["milk"], c: 120, p: 8, f: 0, ml: 240, liquid: true },
+  { k: ["honey"], c: 60, p: 0, f: 0, g: 21 },
+  { k: ["salsa"], c: 10, p: 0, f: 0, g: 30 },
+  { k: ["syrup"], c: 105, p: 0, f: 0, g: 40 },
+  { k: ["jam", "jelly"], c: 50, p: 0, f: 0, g: 20 },
+  { k: ["cheese"], c: 110, p: 7, f: 0, g: 28 },
   { k: ["egg"], c: 75, p: 6, f: 0, g: 50 },
   { k: ["chicken breast", "grilled chicken"], c: 280, p: 52, f: 0, g: 170 },
   { k: ["rotisserie chicken"], c: 300, p: 40, f: 0, g: 180 },
@@ -537,9 +563,9 @@ function takeNumber(s) {
   if (m) return { qty: Number(m[1]) + Number(m[2]) / Number(m[3]), rest: m[4] };
   m = s.match(/^(\d+)\s*\/\s*(\d+)\b\s*(.*)$/);
   if (m) return { qty: Number(m[1]) / Number(m[2]), rest: m[3] };
-  m = s.match(/^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\b\s*(.*)$/);
+  m = s.match(/^(\d*\.\d+|\d+(?:\.\d+)?)\s*[-–]\s*(\d*\.\d+|\d+(?:\.\d+)?)\b\s*(.*)$/);
   if (m) return { qty: (Number(m[1]) + Number(m[2])) / 2, rest: m[3] };
-  m = s.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+  m = s.match(/^(\d*\.\d+|\d+(?:\.\d+)?)\s*(.*)$/); /* \d*\.\d+ admits ".25" */
   if (m) return { qty: Number(m[1]), rest: m[2] };
   m = s.match(/^([a-z]+)\s+(.*)$/);
   if (m && WORD_NUM[m[1]] != null) {
@@ -732,9 +758,16 @@ async function usdaResolve(parsed) {
       rough = parsed.unit.rough;
     } else {
       let pg = null;
-      if (food.servingSize && /g/i.test(food.servingSizeUnit || "")) pg = food.servingSize;
-      if (!pg && needPortion) pg = portionGrams(await usdaPortions(food.fdcId), parsed);
-      if (!pg) { pg = parsed.unit.type === "volume" ? parsed.unit.ml * 0.85 : 100; rough = true; }
+      if (parsed.unit.type === "volume") {
+        /* a stated volume must drive the math — the product's own serving
+           size (often a tiny packet) is irrelevant to "1 tablespoon of" */
+        if (needPortion) pg = portionGrams(await usdaPortions(food.fdcId), parsed);
+        if (!pg) { pg = parsed.unit.ml * 0.95; rough = true; }
+      } else {
+        if (food.servingSize && /g/i.test(food.servingSizeUnit || "")) pg = food.servingSize;
+        if (!pg && needPortion) pg = portionGrams(await usdaPortions(food.fdcId), parsed);
+        if (!pg) { pg = 100; rough = true; }
+      }
       grams = pg * parsed.qty;
     }
 
@@ -929,6 +962,73 @@ function parseNutritionLabel(text) {
   };
 }
 
+/* ---------- morning briefing: yesterday's verdict, today's motivation ----------
+   Same house rules as all humor: react to the data and the habit, never
+   the person. Off days get wit and a plan, never a lecture. */
+function buildBriefing(yds, history, settings) {
+  const rec = history[yds];
+  const pick = (arr, salt) => arr[hashStr(salt + yds) % arr.length];
+  const facts = [];
+  let headline, tone;
+
+  if (rec && rec.shield) {
+    headline = "Yesterday was shielded. 🛡";
+    tone = "A banked perfect-day token covered it automatically. That's not luck — that's savings. The streak never felt a thing.";
+  } else if (!rec || (!rec.e && !rec.s)) {
+    headline = pick(["Yesterday went unrecorded.", "The docket shows a blank page."], "h");
+    tone = pick([
+      "Officially, it never happened. Unofficially, today gets the documentation it deserves.",
+      "No data, no judgment — but also no credit. Today, we take the credit.",
+      "The court can't rule on an empty page. Today's page won't be empty.",
+    ], "t");
+  } else {
+    const onPlan = rec.c > 0 && onPlanCal(yds, history, settings, null, null);
+    const stepsHit = rec.s >= settings.stepGoal;
+    if (rec.e > 0) facts.push(`🧾 ${rec.e} item${rec.e === 1 ? "" : "s"} logged · ${rec.c.toLocaleString()} cal${onPlan ? " — on plan" : ""}`);
+    if (rec.s > 0) facts.push(`👟 ${rec.s.toLocaleString()} steps${stepsHit ? " — goal hit" : ` of ${settings.stepGoal.toLocaleString()}`}`);
+    if ((rec.p || 0) >= settings.proteinGoal) facts.push(`💪 protein goal cleared (${rec.p}g)`);
+    if ((rec.f || 0) >= settings.fiberGoal) facts.push(`🥦 fiber goal cleared (${rec.f}g)`);
+
+    if (onPlan && stepsHit) {
+      headline = pick(["Yesterday: flawless execution.", "The verdict is in: chef's kiss.", "Yesterday ran like a courtroom drama where you win."], "h");
+      tone = pick([
+        "Calories on plan, steps delivered. The jury didn't even deliberate.",
+        "That's what a perfect day looks like on paper. Frame it — then do it again today.",
+        "Airtight case. Opposing counsel (the couch) has requested a recess.",
+      ], "t");
+    } else if (onPlan) {
+      headline = pick(["Yesterday: strong case, short walk.", "Calories: nailed. Steps: negotiable."], "h");
+      tone = pick([
+        "The food ledger was airtight. Today the shoes want in on the action.",
+        "Half the battle decisively won. The sidewalk requests a rematch.",
+      ], "t");
+    } else if (stepsHit) {
+      headline = pick(["Yesterday: boots delivered.", "The steps showed up in force."], "h");
+      tone = pick([
+        "Mileage: excellent. The menu freelanced a little. Today they work as a team.",
+        "You out-walked the plan; the plate went rogue. Now sync them up.",
+      ], "t");
+    } else {
+      headline = pick(["Yesterday testified. It was colorful.", "Yesterday: a spirited exhibit."], "h");
+      tone = pick([
+        "The numbers wandered, but they're on record — which beats perfect and imaginary. Data first, streaks follow.",
+        "Not the tidiest page in the ledger, but it's a page. Champions keep the book open.",
+      ], "t");
+    }
+  }
+
+  const mission = pick([
+    "Today's mission: log the first bite before it's a memory.",
+    "Today's mission: three entries and a walk. The rest is garnish.",
+    "Today's mission: make tonight's reveal boring — in the best way.",
+    "Today's mission: protein early, steps often.",
+    "Today's mission: be the person the streak already believes you are.",
+    "Today's mission: one honest log at a time. That's the whole trick.",
+  ], "m");
+
+  return { yds, headline, facts, tone, mission };
+}
+
 /* ---------- the weekend burrito: fills as the pool gets eaten ---------- */
 function BurritoMeter({ eaten, max }) {
   const pct = Math.max(0, Math.min(100, (eaten / Math.max(1, max)) * 100));
@@ -990,6 +1090,7 @@ function Streakhouse() {
   const [estimateNote, setEstimateNote] = useState("");
   const [estimateItems, setEstimateItems] = useState(null);
   const [mealQuip, setMealQuip] = useState("");
+  const [briefing, setBriefing] = useState(null);
   const [editEntry, setEditEntry] = useState(null);
   const [customFoods, setCustomFoods] = useState(customLoad);
   const [labelBusy, setLabelBusy] = useState(false);
@@ -1045,6 +1146,14 @@ function Streakhouse() {
       if (pi) setPhotoIndex(pi);
       setProfile(prof);
       setDay(d && d.date === t ? d : emptyDay(t));
+
+      /* first open of a new day -> yesterday's verdict */
+      const lastVisit = await sget(K.lastVisit);
+      if (lastVisit !== t) {
+        await sset(K.lastVisit, t);
+        if (lastVisit) setBriefing(buildBriefing(shiftDate(t, -1), hist, st));
+      }
+
       setLoaded(true);
     })();
   }, []);
@@ -2254,6 +2363,26 @@ function Streakhouse() {
             </div>
           )}
         </React.Fragment>
+      )}
+
+      {/* ---------- Morning briefing: yesterday's verdict ---------- */}
+      {briefing && (
+        <div className="sheet" onClick={() => setBriefing(null)}>
+          <div className="sheet-inner" onClick={(e) => e.stopPropagation()}>
+            <div className="stepno">Morning briefing · yesterday, {shortDate(briefing.yds)}</div>
+            <h3>{briefing.headline}</h3>
+            {briefing.facts.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                {briefing.facts.map((f, i) => (
+                  <div className="xpline" key={i}><span className="num">{f}</span></div>
+                ))}
+              </div>
+            )}
+            <div className="sub" style={{ marginTop: 10 }}>{briefing.tone}</div>
+            <div className="evidence">{briefing.mission}</div>
+            <div className="row"><button className="pri" style={{ width: "100%" }} onClick={() => setBriefing(null)}>Court is in session →</button></div>
+          </div>
+        </div>
       )}
 
       {/* ---------- Close the Day sheet ---------- */}

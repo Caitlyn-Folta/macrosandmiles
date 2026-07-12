@@ -15,7 +15,9 @@ icon-192.png, icon-512.png
 App icons
 
 Rules to remember
-After editing index.html, bump the cache version in sw.js. Change mm-v1 to mm-v2 (then v3, and so on) and commit both. If you skip this, phones keep serving the old cached version. If the app ever seems stuck on an old version, this is why.
+After editing index.html, bump the cache version in sw.js. Change mm-v1 to mm-v2 (then v3, and so on) and commit both. If you skip this, phones keep serving the old cached version. The app auto-reloads once when a new service worker takes control, so updates land on the same open — but only if the cache version was bumped.
+
+Morning briefing. On the first open of each calendar day (tracked via sh:lastVisit), a sheet recaps yesterday — items/calories/steps/macro goals, with a verdict headline and a "today's mission" line — in the same never-shameful voice. Logic in buildBriefing() in index.html.
 
 USDA API key lives near the top of index.html: const USDA_KEY = "". Free key from https://fdc.nal.usda.gov/api-key-signup.html. With no key, the app still works using its built-in food table and cache — it just can't look up unfamiliar foods.
 
