@@ -929,6 +929,41 @@ function parseNutritionLabel(text) {
   };
 }
 
+/* ---------- the weekend burrito: fills as the pool gets eaten ---------- */
+function BurritoMeter({ eaten, max }) {
+  const pct = Math.max(0, Math.min(100, (eaten / Math.max(1, max)) * 100));
+  const over = eaten > max;
+  const left = Math.max(0, max - eaten);
+  return (
+    <div style={{ marginTop: 12 }}>
+      <svg viewBox="0 0 220 64" style={{ width: "100%", height: "auto", display: "block" }} role="img"
+        aria-label={`Weekend pool: ${eaten.toLocaleString()} of ${max.toLocaleString()} calories eaten`}>
+        <defs>
+          <pattern id="mm-filling" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="12" height="12" fill="#7FBF4D" />
+            <rect width="6" height="12" fill="#8C5A33" />
+            <rect x="6" width="2.5" height="12" fill="#F5DE8A" />
+          </pattern>
+          <clipPath id="mm-burrito"><rect x="4" y="6" width="212" height="52" rx="26" /></clipPath>
+        </defs>
+        <rect x="4" y="6" width="212" height="52" rx="26" fill="#F3CE7E" />
+        <g clipPath="url(#mm-burrito)">
+          <rect x="4" y="6" width={(212 * pct) / 100} height="52" fill="url(#mm-filling)" style={{ transition: "width .4s ease" }} />
+        </g>
+        <path d="M62 9 q-9 23 0 46" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".7" />
+        <path d="M112 9 q-9 23 0 46" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".7" />
+        <path d="M162 9 q-9 23 0 46" stroke="#D9A94F" strokeWidth="2.5" fill="none" opacity=".7" />
+        <rect x="4" y="6" width="212" height="52" rx="26" fill="none" stroke={over ? "#FF3E8A" : "#2B1B3D"} strokeWidth="3" />
+      </svg>
+      <div className="sub num" style={{ textAlign: "center", marginTop: 4, color: over ? "#FF3E8A" : undefined }}>
+        {over
+          ? `🌯💥 overstuffed by ${(eaten - max).toLocaleString()} cal — the wrap did its best`
+          : `🌯 ${Math.round(pct)}% of the weekend burrito eaten · ${left.toLocaleString()} cal still in the wrap`}
+      </div>
+    </div>
+  );
+}
+
 /* ================================================================ */
 function Streakhouse() {
   const [tab, setTab] = useState("today");
@@ -1066,9 +1101,39 @@ function Streakhouse() {
   const poolSpent = poolDay ? poolSpentThrough(today, history, today, total) : 0;
   const remaining = poolDay ? pool - poolSpent : settings.calTarget - total;
   const budgetShown = poolDay ? pool - (poolSpent - total) : settings.calTarget;
-  const weekendDaysLeft = poolDay ? (dow(today) === 5 ? 3 : dow(today) === 6 ? 2 : 1) : 0;
-  const suggestedToday = poolDay ? Math.max(0, Math.round((pool - (poolSpent - total)) / weekendDaysLeft)) : 0;
   const onPlanNow = onPlanCal(today, history, settings, today, total);
+
+  /* ---------- weekend game plan: even split, or heavier share for chosen days ---------- */
+  const heavyDays = settings.heavyDays || [];
+  const weekendPlan = useMemo(() => {
+    if (!poolDay) return null;
+    const mon = weekMonday(today);
+    const names = { 5: "Friday", 6: "Saturday", 0: "Sunday" };
+    const days = [4, 5, 6].map((i) => shiftDate(mon, i));
+    const w = days.map((ds) => (heavyDays.includes(dow(ds)) ? 1.6 : 1));
+    const wsum = w.reduce((a, b) => a + b, 0);
+    const rows = days.map((ds, i) => ({
+      ds,
+      w: dow(ds),
+      name: names[dow(ds)],
+      heavy: heavyDays.includes(dow(ds)),
+      planned: Math.round((pool * w[i]) / wsum),
+      actual: ds === today ? total : (history[ds] && history[ds].c) || 0,
+      isToday: ds === today,
+      isPast: ds < today,
+    }));
+    /* what's left of the pool, re-split over the remaining days by the same weights */
+    const spentBefore = rows.reduce((a, r) => a + (r.isPast ? r.actual : 0), 0);
+    const remW = rows.reduce((a, r, i) => a + (r.isPast ? 0 : w[i]), 0);
+    const ti = rows.findIndex((r) => r.isToday);
+    const suggestToday = ti >= 0 && remW > 0 ? Math.max(0, Math.round(((pool - spentBefore) * w[ti]) / remW)) : 0;
+    return { rows, suggestToday };
+  }, [poolDay, today, pool, heavyDays, history, total]);
+
+  const toggleHeavyDay = async (w) => {
+    const next = Object.assign({}, settings, { heavyDays: heavyDays.includes(w) ? heavyDays.filter((x) => x !== w) : [...heavyDays, w] });
+    setSettings(next); await sset(K.settings, next);
+  };
   const todayQualifies = day.entries.length > 0 && onPlanNow && day.steps >= settings.stepGoal;
 
   const dayQual = useCallback((ds) => {
@@ -1400,12 +1465,12 @@ function Streakhouse() {
 
   const saveSettings = async () => {
     const ct = parseInt(calDraft, 10), sg = parseInt(stepDraft, 10), pg = parseInt(protDraft, 10), fg = parseInt(fibDraft, 10);
-    const next = {
+    const next = Object.assign({}, settings, {
       calTarget: !isNaN(ct) && ct > 0 ? ct : settings.calTarget,
       stepGoal: !isNaN(sg) && sg > 0 ? sg : settings.stepGoal,
       proteinGoal: !isNaN(pg) && pg > 0 ? pg : settings.proteinGoal,
       fiberGoal: !isNaN(fg) && fg > 0 ? fg : settings.fiberGoal,
-    };
+    });
     setSettings(next); await sset(K.settings, next);
     setShowSettings(false); setCalDraft(""); setStepDraft("");
   };
@@ -1613,6 +1678,7 @@ function Streakhouse() {
         .pips { display:flex; gap:6px; margin-top:10px; }
         .pip { flex:1; text-align:center; font-size:11px; font-weight:900; letter-spacing:.5px; text-transform:uppercase; padding:7px 0; border:2px solid #2B1B3D; border-radius:999px; background:#fff; color:#7A6B8E; cursor:pointer; }
         .pip.filled { background:#00B3A4; color:#fff; }
+        .pip.heavy { background:#FF3E8A; color:#fff; }
         .bank { background:#EDFBF9; border:2px solid #00B3A4; border-radius:14px; padding:10px 14px; font-size:13px; font-weight:800; margin-top:12px; }
         .macrorow { display:flex; align-items:center; gap:14px; padding:9px 0; border-bottom:2px dotted #E3D5F5; }
         .macrorow:last-of-type { border-bottom:none; }
@@ -1722,19 +1788,52 @@ function Streakhouse() {
             <div className="sub num">
               {remaining < 0 ? "over" : "remaining"} · {poolDay ? `${poolSpent.toLocaleString()} / ${pool.toLocaleString()} pool · today so far: ${total.toLocaleString()}` : `${total} / ${settings.calTarget} today`}
             </div>
-            {poolDay && remaining > 0 && (
-              <div className="sub num" style={{ color: "#7A2FF2" }}>Pace guide: ~{suggestedToday.toLocaleString()} today keeps the pool intact through Sunday.</div>
-            )}
             {!poolDay && remaining < 0 && (
               <div className="sub" style={{ color: "#FF3E8A" }}>Over budget. Log it anyway — data doesn't judge, it just testifies later. The 7-day score barely felt that.</div>
             )}
-            <div className="bar"><div style={{ width: `${poolDay ? Math.min(100, Math.round((poolSpent / pool) * 100)) : pct}%`, background: remaining < 0 ? "#FF3E8A" : "#7A2FF2" }} /></div>
+            {poolDay ? (
+              <BurritoMeter eaten={poolSpent} max={pool} />
+            ) : (
+              <div className="bar"><div style={{ width: `${pct}%`, background: remaining < 0 ? "#FF3E8A" : "#7A2FF2" }} /></div>
+            )}
 
             {!poolDay && (
               <div className="bank num">🏦 Banked for the weekend: {bank.toLocaleString()} cal{total > 0 && total < settings.calTarget ? ` (includes ${settings.calTarget - total} pending today)` : ""}</div>
             )}
             {poolDay && bank > 0 && (
               <div className="bank num">🏦 Your Mon–Thu banking added {bankEarned(today, history, settings, null, null).toLocaleString()} cal to this pool. Date night is pre-funded.</div>
+            )}
+
+            {poolDay && weekendPlan && (
+              <React.Fragment>
+                <div className="qname" style={{ marginTop: 14 }}>Weekend game plan</div>
+                <div className="qdesc">Even three-way split by default — or tap the day(s) that run heavy (date night, game day) and they get a bigger cut of the pool.</div>
+                <div className="pips" aria-label="Tap days to give them a heavier calorie budget">
+                  {weekendPlan.rows.map((r) => (
+                    <div key={r.ds} role="button" tabIndex={0} aria-pressed={r.heavy} className={`pip ${r.heavy ? "heavy" : ""}`} onClick={() => toggleHeavyDay(r.w)}>
+                      {r.heavy ? "🔥 " : ""}{r.name.slice(0, 3)}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  {weekendPlan.rows.map((r) => (
+                    <div className="xpline" key={r.ds}>
+                      <span>{r.name}{r.isToday ? " · today" : ""}{r.heavy ? " 🔥" : ""}</span>
+                      <span className="num">
+                        {(r.isPast || r.isToday) && (
+                          <span style={{ color: r.actual > r.planned ? "#FF3E8A" : "#00B3A4" }}>{r.actual.toLocaleString()} / </span>
+                        )}
+                        {r.planned.toLocaleString()} planned
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {remaining > 0 && (
+                  <div className="sub num" style={{ color: "#7A2FF2", marginTop: 8 }}>
+                    Adjusted for the weekend so far: stay near ~{weekendPlan.suggestToday.toLocaleString()} today and the plan survives contact with dinner.
+                  </div>
+                )}
+              </React.Fragment>
             )}
 
             <div className="pips" aria-label="Meal windows — filled means you logged in that window; tap to log">
