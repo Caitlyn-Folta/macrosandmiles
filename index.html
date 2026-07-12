@@ -4,13 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Macros &amp; Miles</title>
-<meta name="theme-color" content="#7A2FF2" />
+<meta name="theme-color" content="#FF5FA2" />
 <link rel="manifest" href="manifest.json" />
 <link rel="apple-touch-icon" href="icon-192.png" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="M&amp;M" />
-<style>body{margin:0;background:#F6EFFF}</style>
+<style>body{margin:0;background:#FAF3E7}</style>
 <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
@@ -93,7 +93,7 @@ const { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Toolt
    Ported from the Claude artifact. Changes from the artifact:
    - window.storage now backed by IndexedDB (shim above)
    - AI estimate replaced by 3-tier lookup: local table -> cache -> USDA
-   Palette: porcelain #F6EFFF / ink #2B1B3D / cobalt #7A2FF2 / ember #FF3E8A / mint #00B3A4 / amber #F0A500
+   Palette: porcelain #FAF3E7 / ink #1E1A1C / cobalt #7C48D8 / ember #FF5FA2 / mint #52B52E / amber #F0A800
 ------------------------------------------------------------- */
 
 /* >>> PASTE YOUR FREE KEY BETWEEN THE QUOTES.
@@ -932,7 +932,7 @@ function BurritoMeter({ eaten, max }) {
           </g>
         )}
       </svg>
-      <div className="sub num" style={{ textAlign: "center", marginTop: 4, color: over ? "#FF3E8A" : undefined }}>
+      <div className="sub num" style={{ textAlign: "center", marginTop: 4, color: over ? "#FF5FA2" : undefined }}>
         {over
           ? `🌯💥 overstuffed by ${(eaten - max).toLocaleString()} cal — the filling is making a run for it`
           : nearFull
@@ -1704,7 +1704,7 @@ function Streakhouse() {
   const latestW = weightChart.length ? weightChart[weightChart.length - 1].w : null;
   const firstW = weightChart.length ? weightChart[0].w : null;
 
-  if (!loaded) return <div style={{ fontFamily: "system-ui", padding: 40, color: "#2B1B3D" }}>Loading…</div>;
+  if (!loaded) return <div style={{ fontFamily: "system-ui", padding: 40, color: "#1E1A1C" }}>Loading…</div>;
 
 
   /* Tab contents as reusable fragments: phones show one at a time behind
@@ -1728,20 +1728,20 @@ function Streakhouse() {
           </div>
 
           <div className="card">
-            <h2>{poolDay ? <React.Fragment>Weekend pool <span style={{ color: "#7A2FF2" }}>FRI–SUN</span></React.Fragment> : "Today's budget"}</h2>
-            <div className="bignum num" style={{ color: remaining < 0 ? "#FF3E8A" : "#2B1B3D" }}>
+            <h2>{poolDay ? <React.Fragment>Weekend pool <span style={{ color: "#7C48D8" }}>FRI–SUN</span></React.Fragment> : "Today's budget"}</h2>
+            <div className="bignum num" style={{ color: remaining < 0 ? "#FF5FA2" : "#1E1A1C" }}>
               {remaining < 0 ? `+${Math.abs(remaining)}` : remaining.toLocaleString()}
             </div>
             <div className="sub num">
               {remaining < 0 ? "over" : "remaining"} · {poolDay ? `${poolSpent.toLocaleString()} / ${pool.toLocaleString()} pool · today so far: ${total.toLocaleString()}` : `${total} / ${dailyBudget} today`}
             </div>
             {!poolDay && remaining < 0 && (
-              <div className="sub" style={{ color: "#FF3E8A" }}>Over budget. Log it anyway — data doesn't judge, it just testifies later. The 7-day score barely felt that.</div>
+              <div className="sub" style={{ color: "#FF5FA2" }}>Over budget. Log it anyway — data doesn't judge, it just testifies later. The 7-day score barely felt that.</div>
             )}
             {poolDay ? (
               <BurritoMeter eaten={poolSpent} max={pool} />
             ) : (
-              <div className="bar"><div style={{ width: `${pct}%`, background: remaining < 0 ? "#FF3E8A" : "#7A2FF2" }} /></div>
+              <div className="bar"><div style={{ width: `${pct}%`, background: remaining < 0 ? "#FF5FA2" : "#7C48D8" }} /></div>
             )}
 
             {!poolDay && (
@@ -1771,7 +1771,7 @@ function Streakhouse() {
                       <span>{r.name}{r.isToday ? " · today" : ""}{r.heavy ? " 🔥" : ""}</span>
                       <span className="num">
                         {(r.isPast || r.isToday) && (
-                          <span style={{ color: r.actual > r.planned ? "#FF3E8A" : "#00B3A4" }}>{r.actual.toLocaleString()} / </span>
+                          <span style={{ color: r.actual > r.planned ? "#FF5FA2" : "#52B52E" }}>{r.actual.toLocaleString()} / </span>
                         )}
                         {r.planned.toLocaleString()} planned
                       </span>
@@ -1779,7 +1779,7 @@ function Streakhouse() {
                   ))}
                 </div>
                 {remaining > 0 && (
-                  <div className="sub num" style={{ color: "#7A2FF2", marginTop: 8 }}>
+                  <div className="sub num" style={{ color: "#7C48D8", marginTop: 8 }}>
                     Adjusted for the weekend so far: stay near ~{weekendPlan.suggestToday.toLocaleString()} today and the plan survives contact with dinner.
                   </div>
                 )}
@@ -1881,7 +1881,7 @@ function Streakhouse() {
                 <div className="chips" style={{ marginTop: 4 }}>
                   {customFoods.map((cf) => (
                     <div key={cf.k[0]} className="chip" onClick={() => addEntry(cf.k[0], cf.c, cf.p || 0, cf.f || 0)}>
-                      {cf.k[0]} <span className="num" style={{ color: "#7A6B8E" }}>{cf.c}</span>
+                      {cf.k[0]} <span className="num" style={{ color: "#5C5254" }}>{cf.c}</span>
                       <span className="x" role="button" aria-label={`Delete ${cf.k[0]} from food database`} onClick={(ev) => { ev.stopPropagation(); deleteCustomFood(cf.k[0]); }}>×</span>
                     </div>
                   ))}
@@ -1893,7 +1893,7 @@ function Streakhouse() {
               <div className="chips">
                 {presets.map((p) => (
                   <div key={p.name} className="chip" onClick={() => (managePresets ? deletePreset(p.name) : addEntry(p.name, p.cal, p.p || 0, p.f || 0))}>
-                    {p.name} <span className="num" style={{ color: "#7A6B8E" }}>{p.cal}</span>
+                    {p.name} <span className="num" style={{ color: "#5C5254" }}>{p.cal}</span>
                     {managePresets && <span className="x">×</span>}
                   </div>
                 ))}
@@ -1975,7 +1975,7 @@ function Streakhouse() {
             <h2>Steps</h2>
             <div className="bignum num">{day.steps.toLocaleString()}</div>
             <div className="sub num">of {settings.stepGoal.toLocaleString()} · {stepPct}%</div>
-            <div className="bar"><div style={{ width: `${stepPct}%`, background: stepPct >= 100 ? "#00B3A4" : "#7A2FF2" }} /></div>
+            <div className="bar"><div style={{ width: `${stepPct}%`, background: stepPct >= 100 ? "#52B52E" : "#7ED957" }} /></div>
             <div className="row">
               <input inputMode="numeric" value={stepInput} onChange={(e) => setStepInput(e.target.value)} placeholder="Count from your watch" aria-label="Step count" onKeyDown={(e) => e.key === "Enter" && saveSteps()} />
               <button className="pri" onClick={() => saveSteps()} disabled={!stepInput}>Save</button>
@@ -2005,7 +2005,7 @@ function Streakhouse() {
           </div>
 
           <div className="card">
-            <h2>Quest board · {questsDone}/3 {poolDay && <span style={{ color: "#F0A500" }}>WEEKEND SET</span>}</h2>
+            <h2>Quest board · {questsDone}/3 {poolDay && <span style={{ color: "#F0A800" }}>WEEKEND SET</span>}</h2>
             {quests.map((q, i) => (
               <div className="quest" key={q.id}>
                 <div
@@ -2041,7 +2041,7 @@ function Streakhouse() {
     <React.Fragment>
           <div className="card">
             <h2>Weight {latestW !== null && firstW !== null && weightChart.length > 1 && (
-              <span className="num" style={{ color: latestW <= firstW ? "#00B3A4" : "#FF3E8A", fontSize: 12 }}>
+              <span className="num" style={{ color: latestW <= firstW ? "#52B52E" : "#FF5FA2", fontSize: 12 }}>
                 {latestW <= firstW ? "▼" : "▲"} {Math.abs(latestW - firstW).toFixed(1)} total
               </span>
             )}</h2>
@@ -2054,14 +2054,14 @@ function Streakhouse() {
               <div style={{ height: 180, marginTop: 14 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={weightChart} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
-                    <CartesianGrid stroke="#EFE5FB" />
+                    <CartesianGrid stroke="#EDE2CC" />
                     <XAxis dataKey="d" tick={{ fontSize: 11, fontWeight: 600 }} />
                     <YAxis domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 11, fontWeight: 600 }} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="w" stroke="#7A2FF2" strokeWidth={2.5} dot={(p) => {
+                    <Line type="monotone" dataKey="w" stroke="#7C48D8" strokeWidth={2.5} dot={(p) => {
                       if (p.cx == null || p.cy == null) return null;
                       const isPd = periodSet.has(p.payload.ds);
-                      return <circle key={p.payload.ds} cx={p.cx} cy={p.cy} r={isPd ? 4.5 : 3} fill={isPd ? "#FF3E8A" : "#7A2FF2"} stroke={isPd ? "#2B1B3D" : "none"} strokeWidth={isPd ? 1.5 : 0} />;
+                      return <circle key={p.payload.ds} cx={p.cx} cy={p.cy} r={isPd ? 4.5 : 3} fill={isPd ? "#FF5FA2" : "#7C48D8"} stroke={isPd ? "#1E1A1C" : "none"} strokeWidth={isPd ? 1.5 : 0} />;
                     }} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -2078,10 +2078,10 @@ function Streakhouse() {
             <h2>Weekly report card {level < 2 && "🔒"}</h2>
             {level >= 2 ? (
               <React.Fragment>
-                <div className="xpline"><span>Avg daily calories</span><span className="num">{weekReport.thisWeek.cal} <span style={{ color: "#7A6B8E" }}>(last wk {weekReport.lastWeek.cal})</span></span></div>
-                <div className="xpline"><span>Total steps</span><span className="num">{weekReport.thisWeek.steps.toLocaleString()} <span style={{ color: "#7A6B8E" }}>(last wk {weekReport.lastWeek.steps.toLocaleString()})</span></span></div>
-                <div className="xpline"><span>Perfect days</span><span className="num">{weekReport.thisWeek.onPlanDays} <span style={{ color: "#7A6B8E" }}>(last wk {weekReport.lastWeek.onPlanDays})</span></span></div>
-                <div className="xpline"><span>Days logged</span><span className="num">{weekReport.thisWeek.loggedDays} <span style={{ color: "#7A6B8E" }}>(last wk {weekReport.lastWeek.loggedDays})</span></span></div>
+                <div className="xpline"><span>Avg daily calories</span><span className="num">{weekReport.thisWeek.cal} <span style={{ color: "#5C5254" }}>(last wk {weekReport.lastWeek.cal})</span></span></div>
+                <div className="xpline"><span>Total steps</span><span className="num">{weekReport.thisWeek.steps.toLocaleString()} <span style={{ color: "#5C5254" }}>(last wk {weekReport.lastWeek.steps.toLocaleString()})</span></span></div>
+                <div className="xpline"><span>Perfect days</span><span className="num">{weekReport.thisWeek.onPlanDays} <span style={{ color: "#5C5254" }}>(last wk {weekReport.lastWeek.onPlanDays})</span></span></div>
+                <div className="xpline"><span>Days logged</span><span className="num">{weekReport.thisWeek.loggedDays} <span style={{ color: "#5C5254" }}>(last wk {weekReport.lastWeek.loggedDays})</span></span></div>
               </React.Fragment>
             ) : (
               <div className="lock">Unlocks at Level 2 ({xpForLevel(2)} XP). This week vs last: avg calories, steps, perfect days.</div>
@@ -2093,7 +2093,7 @@ function Streakhouse() {
             {level >= 3 ? (
               pace ? (
                 <React.Fragment>
-                  <div className="bignum num" style={{ fontSize: 32, color: pace.perWeek <= 0 ? "#00B3A4" : "#FF3E8A" }}>
+                  <div className="bignum num" style={{ fontSize: 32, color: pace.perWeek <= 0 ? "#52B52E" : "#FF5FA2" }}>
                     {pace.perWeek <= 0 ? "" : "+"}{pace.perWeek.toFixed(1)}/week
                   </div>
                   <div className="sub num">At this rate: {pace.in30.toFixed(1)} in 30 days. Trend, not prophecy — the trend responds to inputs.{pace.excluded > 0 ? ` (${pace.excluded} period-day weigh-in${pace.excluded === 1 ? "" : "s"} excluded — that's water, not trend.)` : ""}</div>
@@ -2112,14 +2112,14 @@ function Streakhouse() {
               <div style={{ height: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={overlayChart} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
-                    <CartesianGrid stroke="#EFE5FB" />
+                    <CartesianGrid stroke="#EDE2CC" />
                     <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 600 }} interval={5} />
                     <YAxis yAxisId="c" tick={{ fontSize: 10, fontWeight: 600 }} />
                     <YAxis yAxisId="w" orientation="right" domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 10, fontWeight: 600 }} />
                     <Tooltip />
                     <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                    <Line yAxisId="c" type="monotone" dataKey="cal" name="calories" stroke="#FF3E8A" strokeWidth={2} dot={false} connectNulls />
-                    <Line yAxisId="w" type="monotone" dataKey="w" name="weight" stroke="#7A2FF2" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+                    <Line yAxisId="c" type="monotone" dataKey="cal" name="calories" stroke="#FF5FA2" strokeWidth={2} dot={false} connectNulls />
+                    <Line yAxisId="w" type="monotone" dataKey="w" name="weight" stroke="#7C48D8" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -2136,8 +2136,8 @@ function Streakhouse() {
                   <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 600 }} interval={2} />
                   <YAxis tick={{ fontSize: 10, fontWeight: 600 }} />
                   <Tooltip />
-                  <ReferenceLine y={weekdayTarget(settings)} stroke="#FF3E8A" strokeDasharray="4 4" strokeWidth={2} />
-                  <Bar dataKey="cal" fill="#7A2FF2" radius={[4, 4, 0, 0]} />
+                  <ReferenceLine y={weekdayTarget(settings)} stroke="#FF5FA2" strokeDasharray="4 4" strokeWidth={2} />
+                  <Bar dataKey="cal" fill="#7C48D8" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -2152,8 +2152,8 @@ function Streakhouse() {
                   <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 600 }} interval={2} />
                   <YAxis tick={{ fontSize: 10, fontWeight: 600 }} />
                   <Tooltip />
-                  <ReferenceLine y={settings.stepGoal} stroke="#00B3A4" strokeDasharray="4 4" strokeWidth={2} />
-                  <Bar dataKey="steps" fill="#FF3E8A" radius={[4, 4, 0, 0]} />
+                  <ReferenceLine y={settings.stepGoal} stroke="#52B52E" strokeDasharray="4 4" strokeWidth={2} />
+                  <Bar dataKey="steps" fill="#7ED957" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -2211,7 +2211,7 @@ function Streakhouse() {
               <img src={photos[viewPhoto]} alt={`Progress photo ${viewPhoto}`} />
               <div className="mrow" onClick={(e) => e.stopPropagation()}>
                 <button onClick={() => setViewPhoto(null)}>Close</button>
-                <button style={{ color: "#FF3E8A" }} onClick={() => deletePhoto(viewPhoto)}>Delete</button>
+                <button style={{ color: "#FF5FA2" }} onClick={() => deletePhoto(viewPhoto)}>Delete</button>
               </div>
             </div>
           )}
@@ -2284,119 +2284,121 @@ function Streakhouse() {
   return (
     <div className="sh-root">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Titan+One&family=Nunito:wght@600;700;800;900&display=swap');
-        .sh-root { min-height:100vh; background:#F6EFFF; background-image:radial-gradient(#EBDDFF 1.5px, transparent 1.5px); background-size:22px 22px; color:#2B1B3D; font-family:'Nunito',system-ui,sans-serif; padding:20px 16px 64px; max-width:520px; margin:0 auto; }
+        @import url('https://fonts.googleapis.com/css2?family=Titan+One&family=Baloo+2:wght@500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+        .sh-root { min-height:100vh; background:#FAF3E7; background-image:radial-gradient(rgba(30,26,28,.07) 1.2px, transparent 1.3px); background-size:12px 12px; color:#1E1A1C; font-family:'Baloo 2',system-ui,sans-serif; padding:20px 16px 64px; max-width:520px; margin:0 auto; }
         .sh-root * { box-sizing:border-box; }
-        .num { font-variant-numeric: tabular-nums; }
+        .num { font-family:'Space Mono',monospace; font-variant-numeric: tabular-nums; letter-spacing:-0.02em; }
         .hdr { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; }
-        .brand { font-family:'Titan One',cursive; font-weight:400; font-size:26px; letter-spacing:.5px; line-height:1; color:#7A2FF2; transform:rotate(-1.5deg); text-shadow:2px 2px 0 #FFC53D; }
-        .brand span { color:#FF3E8A; }
-        .datebar { font-size:11px; color:#7A6B8E; margin-top:6px; font-weight:800; text-transform:uppercase; letter-spacing:1px; display:flex; align-items:center; gap:4px; }
+        .brand { font-family:'Titan One',cursive; font-weight:400; font-size:26px; letter-spacing:.5px; line-height:1; color:#7C48D8; transform:rotate(-1.5deg); text-shadow:2px 2px 0 #FFC93C; }
+        .brand span { color:#FF5FA2; }
+        .datebar { font-size:11px; color:#5C5254; margin-top:6px; font-weight:800; text-transform:uppercase; letter-spacing:1px; display:flex; align-items:center; gap:4px; }
         .hdr-right { display:flex; gap:14px; align-items:flex-start; }
         .stat { display:flex; flex-direction:column; align-items:flex-end; }
-        .stat .n { font-weight:900; font-size:26px; line-height:1; }
-        .stat .l { font-size:9px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; color:#7A6B8E; margin-top:2px; }
+        .stat .n { font-weight:800; font-size:26px; line-height:1; }
+        .stat .l { font-size:9px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; color:#5C5254; margin-top:2px; }
         .lvlbar { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
-        .lvlpill { font-size:11px; font-weight:900; background:#7A2FF2; color:#fff; border-radius:999px; padding:4px 12px; letter-spacing:1px; white-space:nowrap; box-shadow:2px 2px 0 #2B1B3D; }
-        .lvltrack { flex:1; height:10px; background:#fff; border:2px solid #2B1B3D; border-radius:6px; overflow:hidden; }
-        .lvltrack > div { height:100%; background:linear-gradient(90deg,#FF3E8A,#7A2FF2); transition:width .3s ease; }
-        .lvlxp { font-size:11px; font-weight:800; color:#7A6B8E; white-space:nowrap; }
+        .lvlpill { font-size:11px; font-weight:800; background:#9B6DF2; color:#1E1A1C; border-radius:999px; padding:4px 12px; letter-spacing:1px; white-space:nowrap; box-shadow:2px 2px 0 #1E1A1C; }
+        .lvltrack { flex:1; height:10px; background:#FFFDF8; border:2.5px solid #1E1A1C; border-radius:6px; overflow:hidden; }
+        .lvltrack > div { height:100%; background:#FF5FA2; transition:width .3s ease; }
+        .lvlxp { font-size:11px; font-weight:800; color:#5C5254; white-space:nowrap; }
         .tokens { font-size:12px; }
         .tabs { display:flex; gap:6px; margin-bottom:14px; }
-        .tabbtn { flex:1; padding:9px 0; font-weight:900; font-size:12px; letter-spacing:1px; text-transform:uppercase; border:2px solid #2B1B3D; border-radius:999px; background:#fff; cursor:pointer; color:#2B1B3D; }
-        .tabbtn.on { background:#FF3E8A; color:#fff; box-shadow:2px 2px 0 #2B1B3D; }
-        .peptalk { background:#FFC53D; border:2px dashed #2B1B3D; border-radius:14px; padding:14px 16px; margin-bottom:14px; transform:rotate(-.8deg); box-shadow:4px 4px 0 #FF3E8A; }
-        .peptalk .pt-label { font-size:10px; font-weight:900; letter-spacing:2px; text-transform:uppercase; color:#7A2FF2; }
-        .peptalk .pt-line { font-size:15px; font-weight:900; margin-top:4px; line-height:1.35; }
+        .tabbtn { flex:1; padding:9px 0; font-weight:800; font-size:12px; letter-spacing:1px; text-transform:uppercase; border:2.5px solid #1E1A1C; border-radius:999px; background:#FFFDF8; cursor:pointer; color:#1E1A1C; }
+        .tabbtn.on { background:#FF5FA2; color:#1E1A1C; box-shadow:2px 2px 0 #1E1A1C; }
+        .peptalk { background:#FFC93C; border:2.5px dashed #1E1A1C; border-radius:14px; padding:14px 16px; margin-bottom:14px; transform:rotate(-.8deg); box-shadow:4px 4px 0 #FF5FA2; }
+        .peptalk .pt-label { font-size:10px; font-weight:800; letter-spacing:2px; text-transform:uppercase; color:#7C48D8; }
+        .peptalk .pt-line { font-size:15px; font-weight:800; margin-top:4px; line-height:1.35; }
         .chain { display:flex; gap:0; align-items:center; margin:0 0 16px; }
-        .link { flex:1; height:13px; border-radius:7px; background:#fff; border:2px solid #E3D5F5; margin-right:3px; }
-        .link.ok { background:#FF3E8A; border-color:#2B1B3D; }
-        .link.shield { background:#00B3A4; border-color:#2B1B3D; }
-        .link.logged:not(.ok):not(.shield) { background:#E3D5F5; border-color:#CBB8E8; }
-        .link.today { outline:2.5px solid #7A2FF2; outline-offset:2px; }
-        .card { background:#fff; border:2px solid #2B1B3D; border-radius:18px; padding:16px; margin-bottom:16px; box-shadow:5px 5px 0 #00B3A4; }
-        .card:nth-of-type(even) { box-shadow:5px 5px 0 #FF3E8A; }
-        .card h2 { font-size:11px; font-weight:900; letter-spacing:1.5px; text-transform:uppercase; margin:0 0 10px; color:#7A2FF2; display:flex; justify-content:space-between; align-items:center; }
+        .link { flex:1; height:13px; border-radius:7px; background:#fff; border:2px solid #EBDFC9; margin-right:3px; }
+        .link.ok { background:#FF5FA2; border-color:#1E1A1C; }
+        .link.shield { background:#7ED957; border-color:#1E1A1C; }
+        .link.logged:not(.ok):not(.shield) { background:#EBDFC9; border-color:#D9CBAF; }
+        .link.today { outline:2.5px solid #7C48D8; outline-offset:2px; }
+        .card { background:#FFFDF8; border:2.5px solid #1E1A1C; border-radius:18px; padding:16px; margin-bottom:16px; box-shadow:5px 5px 0 #52B52E; }
+        .card:nth-of-type(even) { box-shadow:5px 5px 0 #FF5FA2; }
+        .card h2 { font-size:11px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; margin:0 0 10px; color:#7C48D8; display:flex; justify-content:space-between; align-items:center; }
         .bignum { font-family:'Titan One',cursive; font-weight:400; font-size:42px; line-height:1; }
-        .sub { font-size:13px; color:#7A6B8E; font-weight:700; margin-top:2px; }
-        .bar { height:12px; background:#F6EFFF; border:2px solid #2B1B3D; border-radius:7px; margin-top:12px; overflow:hidden; }
+        .sub { font-size:13px; color:#5C5254; font-weight:700; margin-top:2px; }
+        .bar { height:12px; background:#FAF3E7; border:2.5px solid #1E1A1C; border-radius:7px; margin-top:12px; overflow:hidden; }
         .bar > div { height:100%; transition:width .3s ease; }
         .row { display:flex; gap:8px; margin-top:12px; }
-        input, select, textarea { font-family:inherit; font-size:15px; padding:10px 12px; border:2px solid #2B1B3D; border-radius:12px; background:#F6EFFF; width:100%; font-weight:700; color:#2B1B3D; }
-        input::placeholder, textarea::placeholder { color:#A894C4; }
-        input:focus, textarea:focus { outline:3px solid #FFC53D; outline-offset:1px; }
+        input, select, textarea { font-family:inherit; font-size:15px; padding:10px 12px; border:2.5px solid #1E1A1C; border-radius:12px; background:#FAF3E7; width:100%; font-weight:700; color:#1E1A1C; }
+        input::placeholder, textarea::placeholder { color:#93878A; }
+        input:focus, textarea:focus { outline:3px solid #FFC93C; outline-offset:1px; }
         textarea.foodbox { resize:none; line-height:1.4; min-height:76px; }
         .micbtn { border-radius:14px; font-size:18px; padding:0 14px; flex-shrink:0; }
-        button { font-family:inherit; font-weight:900; font-size:14px; border:2px solid #2B1B3D; border-radius:999px; padding:10px 16px; cursor:pointer; background:#fff; color:#2B1B3D; }
-        button:focus-visible { outline:3px solid #FFC53D; outline-offset:2px; }
-        button.pri { background:#7A2FF2; color:#fff; box-shadow:2px 2px 0 #2B1B3D; }
-        button.ember { background:#FF3E8A; color:#fff; box-shadow:2px 2px 0 #2B1B3D; }
-        button.ink { background:#2B1B3D; color:#FFC53D; }
+        button { font-family:inherit; font-weight:800; font-size:14px; border:2.5px solid #1E1A1C; border-radius:999px; padding:10px 16px; cursor:pointer; background:#FFFDF8; color:#1E1A1C; transition:transform .12s cubic-bezier(.2,0,0,1), box-shadow .12s cubic-bezier(.2,0,0,1); }
+        button:focus-visible { outline:3px solid #FFC93C; outline-offset:2px; }
+        button.pri { background:#FF5FA2; color:#1E1A1C; box-shadow:3px 3px 0 #1E1A1C; }
+        button.ember { background:#FFC93C; color:#1E1A1C; box-shadow:3px 3px 0 #1E1A1C; }
+        button.ink { background:#1E1A1C; color:#FAF3E7; box-shadow:3px 3px 0 #FF5FA2; }
+        button.pri:hover:not(:disabled), button.ember:hover:not(:disabled), button.ink:hover:not(:disabled) { transform:translate(-2px,-2px); box-shadow:5px 5px 0 #1E1A1C; }
+        button:active:not(:disabled) { transform:translate(3px,3px) !important; box-shadow:none !important; }
         button:disabled { opacity:.45; cursor:default; box-shadow:none; }
         .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
-        .chip { background:#F6EFFF; border:2px solid #2B1B3D; border-radius:999px; padding:6px 12px; font-size:13px; font-weight:800; cursor:pointer; display:flex; align-items:center; gap:6px; }
-        .chip .x { color:#FF3E8A; font-weight:900; }
-        .quest { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:2px dotted #E3D5F5; }
+        .chip { background:#FAF3E7; border:2.5px solid #1E1A1C; border-radius:999px; padding:6px 12px; font-size:13px; font-weight:800; cursor:pointer; display:flex; align-items:center; gap:6px; }
+        .chip .x { color:#FF5FA2; font-weight:800; }
+        .quest { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:2px dotted #EBDFC9; }
         .quest:last-child { border-bottom:none; }
-        .qbox { width:26px; height:26px; border:2px solid #2B1B3D; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:900; flex-shrink:0; background:#fff; margin-top:1px; }
-        .qbox.done { background:#00B3A4; border-color:#2B1B3D; color:#fff; transform:rotate(-4deg); }
-        .qbox.tap { cursor:pointer; border-style:dashed; background:#FFF6DE; }
-        .qname { font-size:14px; font-weight:900; }
-        .qname.done { text-decoration:line-through; color:#7A6B8E; }
-        .qdesc { font-size:12px; color:#7A6B8E; font-weight:700; }
-        .qtag { font-size:9px; font-weight:900; letter-spacing:1px; color:#FF3E8A; text-transform:uppercase; margin-left:6px; }
-        .entry { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:2px dotted #E3D5F5; }
+        .qbox { width:26px; height:26px; border:2.5px solid #1E1A1C; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:800; flex-shrink:0; background:#fff; margin-top:1px; }
+        .qbox.done { background:#7ED957; border-color:#1E1A1C; color:#1E1A1C; transform:rotate(-4deg); }
+        .qbox.tap { cursor:pointer; border-style:dashed; background:#FFEFC2; }
+        .qname { font-size:14px; font-weight:800; }
+        .qname.done { text-decoration:line-through; color:#5C5254; }
+        .qdesc { font-size:12px; color:#5C5254; font-weight:700; }
+        .qtag { font-size:9px; font-weight:800; letter-spacing:1px; color:#FF5FA2; text-transform:uppercase; margin-left:6px; }
+        .entry { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:2px dotted #EBDFC9; }
         .entry:last-child { border-bottom:none; }
         .entry .nm { font-weight:700; font-size:14px; }
         .entry .actions { display:flex; gap:10px; align-items:center; }
-        .entry .cal { font-weight:900; font-size:14px; }
+        .entry .cal { font-weight:800; font-size:14px; }
         .tinybtn { border:none; background:none; padding:2px 4px; font-size:15px; cursor:pointer; }
-        .note { font-size:12px; color:#7A2FF2; font-weight:800; margin-top:8px; }
-        .quip { background:#F0E7FF; border:2px solid #7A2FF2; border-radius:14px; padding:10px 14px; margin-top:12px; transform:rotate(-.4deg); }
-        .quip .ql { font-size:9px; font-weight:900; letter-spacing:1.5px; text-transform:uppercase; color:#7A2FF2; }
+        .note { font-size:12px; color:#7C48D8; font-weight:800; margin-top:8px; }
+        .quip { background:#FFD6E8; border:2px solid #7C48D8; border-radius:14px; padding:10px 14px; margin-top:12px; transform:rotate(-.4deg); }
+        .quip .ql { font-size:9px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; color:#7C48D8; }
         .quip .qt { font-size:13px; font-weight:800; margin-top:2px; line-height:1.35; }
-        .estitem { background:#F6EFFF; border:2px dashed #2B1B3D; border-radius:14px; padding:10px; margin-top:10px; }
+        .estitem { background:#FAF3E7; border:2.5px dashed #1E1A1C; border-radius:14px; padding:10px; margin-top:10px; }
         .estitem input { background:#fff; }
-        .estnote { font-size:11px; color:#7A6B8E; font-weight:800; margin-top:6px; }
-        .entrymacros { font-size:11px; color:#7A6B8E; font-weight:800; margin-left:6px; }
+        .estnote { font-size:11px; color:#5C5254; font-weight:800; margin-top:6px; }
+        .entrymacros { font-size:11px; color:#5C5254; font-weight:800; margin-left:6px; }
         .gear { border:none; background:none; font-size:16px; cursor:pointer; padding:2px 4px; }
-        .empty { font-size:13px; color:#7A6B8E; font-weight:700; padding:6px 0; font-style:italic; }
-        .nudge { background:#FFF6DE; border:2px solid #FFC53D; border-radius:14px; padding:12px 14px; font-size:13px; font-weight:800; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:10px; transform:rotate(.5deg); }
+        .empty { font-size:13px; color:#5C5254; font-weight:700; padding:6px 0; font-style:italic; }
+        .nudge { background:#FFEFC2; border:2px solid #FFC93C; border-radius:14px; padding:12px 14px; font-size:13px; font-weight:800; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:10px; transform:rotate(.5deg); }
         .nudge button { padding:6px 12px; font-size:12px; white-space:nowrap; }
         .pips { display:flex; gap:6px; margin-top:10px; }
-        .pip { flex:1; text-align:center; font-size:11px; font-weight:900; letter-spacing:.5px; text-transform:uppercase; padding:7px 0; border:2px solid #2B1B3D; border-radius:999px; background:#fff; color:#7A6B8E; cursor:pointer; }
-        .pip.filled { background:#00B3A4; color:#fff; }
-        .pip.heavy { background:#FF3E8A; color:#fff; }
-        .bank { background:#EDFBF9; border:2px solid #00B3A4; border-radius:14px; padding:10px 14px; font-size:13px; font-weight:800; margin-top:12px; }
-        .macrorow { display:flex; align-items:center; gap:14px; padding:9px 0; border-bottom:2px dotted #E3D5F5; }
+        .pip { flex:1; text-align:center; font-size:11px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; padding:7px 0; border:2.5px solid #1E1A1C; border-radius:999px; background:#fff; color:#5C5254; cursor:pointer; }
+        .pip.filled { background:#7ED957; color:#1E1A1C; }
+        .pip.heavy { background:#FF5FA2; color:#1E1A1C; }
+        .bank { background:#DFF6D2; border:2px solid #52B52E; border-radius:14px; padding:10px 14px; font-size:13px; font-weight:800; margin-top:12px; }
+        .macrorow { display:flex; align-items:center; gap:14px; padding:9px 0; border-bottom:2px dotted #EBDFC9; }
         .macrorow:last-of-type { border-bottom:none; }
         .micons { font-size:20px; letter-spacing:3px; white-space:nowrap; }
-        .mgoal { font-size:14px; font-weight:900; }
-        .mhit { font-size:10px; font-weight:900; letter-spacing:1px; color:#00B3A4; }
+        .mgoal { font-size:14px; font-weight:800; }
+        .mhit { font-size:10px; font-weight:800; letter-spacing:1px; color:#52B52E; }
         .pgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
-        .pcell { position:relative; border:2px solid #2B1B3D; border-radius:12px; overflow:hidden; aspect-ratio:3/4; background:#F6EFFF; cursor:pointer; }
+        .pcell { position:relative; border:2.5px solid #1E1A1C; border-radius:12px; overflow:hidden; aspect-ratio:3/4; background:#FAF3E7; cursor:pointer; }
         .pcell img { width:100%; height:100%; object-fit:cover; display:block; }
-        .pcell .pd { position:absolute; bottom:0; left:0; right:0; background:rgba(43,27,61,.85); color:#fff; font-size:10px; font-weight:800; text-align:center; padding:3px 0; }
+        .pcell .pd { position:absolute; bottom:0; left:0; right:0; background:rgba(30,26,28,.85); color:#fff; font-size:10px; font-weight:800; text-align:center; padding:3px 0; }
         .compare { display:flex; gap:8px; margin-top:12px; }
         .compare .side { flex:1; }
-        .compare img { width:100%; border:2px solid #2B1B3D; border-radius:12px; display:block; }
-        .compare .cl { font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:1px; color:#7A6B8E; margin-bottom:4px; text-align:center; }
-        .modal { position:fixed; inset:0; background:rgba(43,27,61,.88); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; z-index:50; }
+        .compare img { width:100%; border:2.5px solid #1E1A1C; border-radius:12px; display:block; }
+        .compare .cl { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:1px; color:#5C5254; margin-bottom:4px; text-align:center; }
+        .modal { position:fixed; inset:0; background:rgba(30,26,28,.88); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; z-index:50; }
         .modal img { max-width:100%; max-height:75vh; border-radius:14px; }
         .modal .mrow { display:flex; gap:10px; margin-top:14px; }
         .modal button { background:#fff; }
-        .sheet { position:fixed; inset:0; background:rgba(43,27,61,.65); display:flex; align-items:flex-end; justify-content:center; z-index:60; }
-        .sheet-inner { background:#F6EFFF; width:100%; max-width:520px; border-radius:24px 24px 0 0; border:2px solid #2B1B3D; border-bottom:none; padding:20px 18px 36px; max-height:85vh; overflow-y:auto; }
-        .sheet h3 { font-weight:900; font-size:18px; margin:0 0 4px; }
-        .sheet .stepno { font-size:10px; font-weight:900; letter-spacing:1.5px; text-transform:uppercase; color:#7A2FF2; }
-        .reveal-score { font-family:'Titan One',cursive; font-weight:400; font-size:76px; line-height:1; text-align:center; margin:14px 0 4px; text-shadow:3px 3px 0 #FFC53D; }
-        .reveal-label { text-align:center; font-size:11px; font-weight:900; letter-spacing:2px; text-transform:uppercase; color:#7A6B8E; }
-        .reveal-quip { text-align:center; font-size:14px; font-weight:900; margin-top:6px; color:#7A2FF2; }
-        .xpline { display:flex; justify-content:space-between; font-size:13px; font-weight:800; padding:6px 0; border-bottom:2px dotted #E3D5F5; }
-        .xpline .v { color:#7A2FF2; }
-        .evidence { background:#2B1B3D; color:#FFC53D; border-radius:14px; padding:14px; font-size:14px; font-weight:800; margin-top:14px; text-align:center; transform:rotate(-.5deg); }
-        .toast { position:fixed; top:16px; left:50%; transform:translateX(-50%); background:#FF3E8A; color:#fff; font-weight:900; font-size:13px; padding:10px 18px; border-radius:999px; z-index:70; box-shadow:3px 3px 0 #2B1B3D; }
-        .lock { font-size:13px; color:#7A6B8E; font-weight:800; padding:8px 0; }
+        .sheet { position:fixed; inset:0; background:rgba(30,26,28,.65); display:flex; align-items:flex-end; justify-content:center; z-index:60; }
+        .sheet-inner { background:#FAF3E7; width:100%; max-width:520px; border-radius:24px 24px 0 0; border:2.5px solid #1E1A1C; border-bottom:none; padding:20px 18px 36px; max-height:85vh; overflow-y:auto; }
+        .sheet h3 { font-weight:800; font-size:18px; margin:0 0 4px; }
+        .sheet .stepno { font-size:10px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; color:#7C48D8; }
+        .reveal-score { font-family:'Titan One',cursive; font-weight:400; font-size:76px; line-height:1; text-align:center; margin:14px 0 4px; text-shadow:3px 3px 0 #FFC93C; }
+        .reveal-label { text-align:center; font-size:11px; font-weight:800; letter-spacing:2px; text-transform:uppercase; color:#5C5254; }
+        .reveal-quip { text-align:center; font-size:14px; font-weight:800; margin-top:6px; color:#7C48D8; }
+        .xpline { display:flex; justify-content:space-between; font-size:13px; font-weight:800; padding:6px 0; border-bottom:2px dotted #EBDFC9; }
+        .xpline .v { color:#7C48D8; }
+        .evidence { background:#1E1A1C; color:#FFC93C; border-radius:14px; padding:14px; font-size:14px; font-weight:800; margin-top:14px; text-align:center; transform:rotate(-.5deg); }
+        .toast { position:fixed; top:16px; left:50%; transform:translateX(-50%); background:#FF5FA2; color:#1E1A1C; font-weight:800; font-size:13px; padding:10px 18px; border-radius:999px; z-index:70; box-shadow:3px 3px 0 #1E1A1C; }
+        .lock { font-size:13px; color:#5C5254; font-weight:800; padding:8px 0; }
         @media (prefers-reduced-motion: reduce) { .bar > div, .lvltrack > div { transition:none; } }
         /* ---------- wide screens: the dashboard ---------- */
         @media (min-width: 1000px) {
@@ -2405,7 +2407,7 @@ function Streakhouse() {
           .dash { display:flex; gap:24px; align-items:flex-start; }
           .dashcol { flex:1; min-width:0; }
           .peptalk { margin-bottom:16px; }
-          .sheet-inner { border-radius:24px; border-bottom:2px solid #2B1B3D; margin-bottom:6vh; }
+          .sheet-inner { border-radius:24px; border-bottom:2.5px solid #1E1A1C; margin-bottom:6vh; }
           .sheet { align-items:center; }
         }
       `}</style>
@@ -2422,11 +2424,11 @@ function Streakhouse() {
         </div>
         <div className="hdr-right">
           <div className="stat">
-            <div className="n num" style={{ color: adherence >= 70 ? "#00B3A4" : adherence >= 40 ? "#F0A500" : "#7A6B8E" }}>{adherence}</div>
+            <div className="n num" style={{ color: adherence >= 70 ? "#52B52E" : adherence >= 40 ? "#F0A800" : "#5C5254" }}>{adherence}</div>
             <div className="l">7-day score</div>
           </div>
           <div className="stat">
-            <div className="n num" style={{ color: streak > 0 ? "#FF3E8A" : "#C9B8DE" }}>{streak > 0 ? `🔥${streak}` : "0"}</div>
+            <div className="n num" style={{ color: streak > 0 ? "#FF5FA2" : "#CDBFA6" }}>{streak > 0 ? `🔥${streak}` : "0"}</div>
             <div className="l">streak · best {profile.bestStreak || 0}</div>
           </div>
         </div>
@@ -2475,7 +2477,7 @@ function Streakhouse() {
               <div className="xpline"><span>Total steps</span><span className="num">{weeklyReview.steps.toLocaleString()} · goal hit {weeklyReview.stepDays}×</span></div>
               <div className="xpline"><span>💪 protein / 🥦 fiber days</span><span className="num">{weeklyReview.protDays} / {weeklyReview.fibDays}</span></div>
               {weeklyReview.wDelta !== null && (
-                <div className="xpline"><span>Weight over the week</span><span className="num" style={{ color: weeklyReview.wDelta <= 0 ? "#00B3A4" : "#7A6B8E" }}>{weeklyReview.wDelta > 0 ? "+" : ""}{weeklyReview.wDelta}</span></div>
+                <div className="xpline"><span>Weight over the week</span><span className="num" style={{ color: weeklyReview.wDelta <= 0 ? "#52B52E" : "#5C5254" }}>{weeklyReview.wDelta > 0 ? "+" : ""}{weeklyReview.wDelta}</span></div>
               )}
             </div>
             <div className="qname" style={{ marginTop: 14 }}>Reconfirm this week's goals</div>
@@ -2579,17 +2581,17 @@ function Streakhouse() {
             {closeFlow.step === 4 && closeFlow.reveal && (
               <React.Fragment>
                 <div className="stepno">Day closed</div>
-                <div className="reveal-score num" style={{ color: closeFlow.reveal.score >= 70 ? "#00B3A4" : closeFlow.reveal.score >= 40 ? "#F0A500" : "#FF3E8A" }}>{closeFlow.reveal.score}</div>
+                <div className="reveal-score num" style={{ color: closeFlow.reveal.score >= 70 ? "#52B52E" : closeFlow.reveal.score >= 40 ? "#F0A800" : "#FF5FA2" }}>{closeFlow.reveal.score}</div>
                 <div className="reveal-label">Day score</div>
                 <div className="reveal-quip">{scoreQuip(closeFlow.reveal.score)}</div>
                 <div style={{ marginTop: 14 }}>
                   {closeFlow.reveal.lines.map((l, i) => (
                     <div className="xpline" key={i}><span>{l.t}</span><span className="v num">+{l.v} XP</span></div>
                   ))}
-                  <div className="xpline" style={{ borderBottom: "none" }}><span style={{ fontWeight: 900 }}>Total</span><span className="v num" style={{ fontWeight: 900 }}>+{closeFlow.reveal.xp} XP</span></div>
+                  <div className="xpline" style={{ borderBottom: "none" }}><span style={{ fontWeight: 800 }}>Total</span><span className="v num" style={{ fontWeight: 800 }}>+{closeFlow.reveal.xp} XP</span></div>
                 </div>
-                {closeFlow.reveal.tokenEarned && <div className="note" style={{ color: "#00B3A4" }}>🛡 Rest Day token earned — 7 perfect days banked one automatic shield.</div>}
-                {closeFlow.reveal.levelUp && <div className="note" style={{ color: "#7A2FF2" }}>LEVEL {closeFlow.reveal.levelUp} — new analytics unlocked in Trends.</div>}
+                {closeFlow.reveal.tokenEarned && <div className="note" style={{ color: "#52B52E" }}>🛡 Rest Day token earned — 7 perfect days banked one automatic shield.</div>}
+                {closeFlow.reveal.levelUp && <div className="note" style={{ color: "#7C48D8" }}>LEVEL {closeFlow.reveal.levelUp} — new analytics unlocked in Trends.</div>}
                 <div className="evidence">{closeFlow.reveal.evidence}</div>
                 {closeFlow.reveal.closer && <div className="sub" style={{ textAlign: "center", marginTop: 10 }}>{closeFlow.reveal.closer}</div>}
                 <div className="row"><button className="pri" style={{ width: "100%" }} onClick={() => { setCloseFlow(null); if (dow(today) === 0) openSundayReview(); }}>Done</button></div>
