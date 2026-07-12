@@ -87,11 +87,13 @@ const { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Toolt
 
 /* >>> PASTE YOUR FREE KEY BETWEEN THE QUOTES.
    Get one at https://fdc.nal.usda.gov/api-key-signup.html
-   Leave empty to run fully offline (local table + cache only). */
+   Leave empty and lookups fall back to Open Food Facts (free, no key). */
 const USDA_KEY = "zLwrKI6hwUs36rT5jb8hnV7fWEZm9t0OjlOkbuZn";
 
 const USDA_SEARCH = "https://api.nal.usda.gov/fdc/v1/foods/search";
 const USDA_DETAIL = "https://api.nal.usda.gov/fdc/v1/food/";
+/* Open Food Facts — free community database, no API key, strong on branded/packaged foods */
+const OFF_SEARCH = "https://world.openfoodfacts.org/cgi/search.pl";
 const CACHE_KEY = "mm:foodcache:v1";
 
 const K = {
@@ -441,6 +443,10 @@ function parseSegment(raw) {
   if (u) { unit = u; s = u.rest; }
   s = s.replace(/^of\s+/, "");
 
+  /* filler words in front of the food name hurt every lookup tier */
+  let prev;
+  do { prev = s; s = s.replace(/^(?:some|my|our|his|her|the|this|that|just|leftover|leftovers)\s+/, ""); } while (s !== prev);
+
   if (qty === null) {
     const trail = s.match(/^(.*?)[\s,]+(\d+(?:\.\d+)?)\s*([a-z]+)\.?\s*$/);
     if (trail) {
@@ -574,7 +580,12 @@ function portionGrams(portions, parsed) {
 }
 
 async function usdaResolve(parsed) {
-  const foods = await usdaSearch(parsed.name);
+  let foods = await usdaSearch(parsed.name);
+  if (!foods.length) {
+    /* long descriptions rarely match — retry on the last two words ("grandma's beef stew" -> "beef stew") */
+    const words = parsed.name.split(/\s+/).filter(Boolean);
+    if (words.length > 2) foods = await usdaSearch(words.slice(-2).join(" "));
+  }
   if (!foods.length) return { status: "none" };
 
   const build = async (food, needPortion) => {
@@ -620,6 +631,63 @@ async function usdaResolve(parsed) {
   return { status: "candidates", candidates };
 }
 
+/* ---------- Open Food Facts: free, keyless, community-maintained ----------
+   Values come per 100 g; kcal preferred, kJ converted when that's all there is. */
+async function offResolve(parsed) {
+  const url = `${OFF_SEARCH}?search_terms=${encodeURIComponent(parsed.name)}` +
+    `&search_simple=1&action=process&json=1&page_size=8&sort_by=unique_scans_n` +
+    `&fields=product_name,nutriments,serving_quantity,serving_size`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`OFF HTTP ${res.status}`);
+  const data = await res.json();
+  const prod = (data.products || []).find((pr) => {
+    const n = pr.nutriments || {};
+    return n["energy-kcal_100g"] != null || n["energy_100g"] != null;
+  });
+  if (!prod) return { status: "none" };
+
+  const n = prod.nutriments;
+  const per100 = {
+    cal: n["energy-kcal_100g"] != null ? n["energy-kcal_100g"] : n["energy_100g"] / 4.184,
+    p: n["proteins_100g"] || 0,
+    f: n["fiber_100g"] || 0,
+  };
+
+  let grams;
+  let rough = false;
+  if (parsed.unit.type === "weight") {
+    grams = parsed.qty * parsed.unit.grams;
+    rough = parsed.unit.rough;
+  } else {
+    let pg = parseFloat(prod.serving_quantity);
+    if ((!pg || isNaN(pg)) && prod.serving_size) {
+      const m = String(prod.serving_size).match(/(\d+(?:\.\d+)?)\s*(?:g|ml)/i);
+      if (m) pg = parseFloat(m[1]);
+    }
+    if (!pg || isNaN(pg)) { pg = parsed.unit.type === "volume" ? parsed.unit.ml * 0.85 : 100; rough = true; }
+    grams = pg * parsed.qty;
+  }
+
+  const factor = grams / 100;
+  const perServing = grams / Math.max(parsed.qty, 0.001);
+  cachePut(parsed.name, {
+    c: Math.round(per100.cal * (perServing / 100)),
+    p: Math.round(per100.p * (perServing / 100)),
+    f: Math.round(per100.f * (perServing / 100)),
+    g: Math.round(perServing),
+  });
+  return {
+    status: "resolved",
+    entry: {
+      name: `${parsed.qty !== 1 ? parsed.qty + "× " : ""}${(prod.product_name || parsed.name).toLowerCase().slice(0, 50)}`,
+      cal: Math.round(per100.cal * factor),
+      p: Math.round(per100.p * factor),
+      f: Math.round(per100.f * factor),
+      rough,
+    },
+  };
+}
+
 async function lookupFood(desc) {
   const results = [];
   for (const seg of splitSegments(desc)) {
@@ -641,13 +709,21 @@ async function lookupFood(desc) {
       continue;
     }
 
-    if (!USDA_KEY) { results.push({ status: "none", source: "nokey", parsed }); continue; }
-    try {
-      const r = await usdaResolve(parsed);
-      results.push(Object.assign({ source: "usda", parsed }, r));
-    } catch (e) {
-      results.push({ status: "none", source: "error", parsed, error: e.message });
+    /* Tier 4: USDA (needs key), Tier 5: Open Food Facts (keyless) as fallback */
+    let hit = null, err = null;
+    if (USDA_KEY) {
+      try {
+        const r = await usdaResolve(parsed);
+        if (r.status !== "none") hit = Object.assign({ source: "usda", parsed }, r);
+      } catch (e) { err = e.message; }
     }
+    if (!hit) {
+      try {
+        const o = await offResolve(parsed);
+        if (o.status !== "none") hit = Object.assign({ source: "off", parsed }, o);
+      } catch (e) { err = err || e.message; }
+    }
+    results.push(hit || { status: "none", source: err ? "error" : "noresult", parsed, error: err });
   }
   return { segments: results };
 }
@@ -871,9 +947,11 @@ function Streakhouse() {
 
   const ctx = { day, settings, weights, onPlanNow };
   const quests = useMemo(() => questsForDate(today), [today]);
-  const pepTalk = PEP_TALKS[hashStr("pep" + today) % PEP_TALKS.length];
-  const foodPh = FOOD_PLACEHOLDERS[hashStr("ph" + today) % FOOD_PLACEHOLDERS.length];
-  const emptyLine = EMPTY_LOG_LINES[hashStr("mt" + today) % EMPTY_LOG_LINES.length];
+  /* fresh jokes on every app open, stable for the session */
+  const [funSeed] = useState(() => String(Math.floor(Math.random() * 1e9)));
+  const pepTalk = PEP_TALKS[hashStr("pep" + funSeed) % PEP_TALKS.length];
+  const foodPh = FOOD_PLACEHOLDERS[hashStr("ph" + funSeed) % FOOD_PLACEHOLDERS.length];
+  const emptyLine = EMPTY_LOG_LINES[hashStr("mt" + funSeed) % EMPTY_LOG_LINES.length];
   const questStatus = quests.map((q) => (q.manual ? !!day.mq[q.id] : q.test(ctx)));
   const questsDone = questStatus.filter(Boolean).length;
 
@@ -1037,7 +1115,7 @@ function Streakhouse() {
 
   /* ---------- food estimate: local table -> custom foods -> cache -> USDA ----------
      Every parsed input gets its own line with the tool's estimate, editable before adding. */
-  const SOURCE_LABEL = { local: "built-in table", custom: "your food database", cache: "seen before", usda: "USDA lookup" };
+  const SOURCE_LABEL = { local: "built-in table", custom: "your food database", cache: "seen before", usda: "USDA lookup", off: "Open Food Facts" };
   const estimate = async () => {
     if (!desc.trim()) return;
     setEstimating(true); setEstimateNote(""); setEstimateItems(null);
@@ -1052,9 +1130,9 @@ function Streakhouse() {
         const e = s.status === "resolved" ? s.entry : s.status === "candidates" ? s.candidates[0] : null;
         const notes = [];
         if (!e) {
-          notes.push(s.source === "nokey"
-            ? "no match, and no USDA key set — enter the numbers"
-            : s.source === "error" ? `lookup failed (${s.error}) — enter the numbers` : "no match found — enter the numbers");
+          notes.push(s.source === "error"
+            ? `lookup failed (${s.error}) — enter the numbers`
+            : "no match found — enter the numbers, or scan its label below");
         } else {
           notes.push(SOURCE_LABEL[s.source] || s.source);
           if (s.status === "candidates") notes.push("closest USDA match — edit if it looks off");
@@ -1112,37 +1190,42 @@ function Streakhouse() {
         f: r.f != null ? String(r.f) : "",
         g: r.g != null ? String(r.g) : "",
         liquid: r.liquid,
+        logToday: true,
+        saveDb: true,
       });
       const found = ["cal", "p", "f", "g"].filter((k) => r[k] != null).length;
       setLabelNote(found
-        ? `Read ${found}/4 fields off the label. Name it, check the numbers, save.`
+        ? `Read ${found}/4 fields off the label. Name it, check the numbers, add.`
         : "Couldn't read numbers off that photo. Try a straighter, closer shot — or type them in below.");
     } catch (e) {
-      setLabelForm({ name: "", cal: "", p: "", f: "", g: "", liquid: false });
+      setLabelForm({ name: "", cal: "", p: "", f: "", g: "", liquid: false, logToday: true, saveDb: true });
       setLabelNote(`Scan failed (${e.message}). Type the label values in below.`);
     }
     setLabelBusy(false);
   };
 
-  const saveCustomFood = async (alsoLog) => {
-    const name = labelForm.name.trim().toLowerCase();
+  const addLabelFood = async () => {
+    const name = labelForm.name.trim();
     const cal = parseFloat(labelForm.cal);
     if (!name || isNaN(cal)) { setLabelNote("Needs at least a name and calories per serving."); return; }
-    const entry = {
-      k: [name],
-      c: Math.max(0, Math.round(cal)),
-      p: Math.max(0, Math.round(parseFloat(labelForm.p) || 0)),
-      f: Math.max(0, Math.round(parseFloat(labelForm.f) || 0)),
-    };
-    const g = parseFloat(labelForm.g);
-    if (!isNaN(g) && g > 0) {
-      if (labelForm.liquid) { entry.ml = g; entry.liquid = true; } else entry.g = g;
+    if (!labelForm.logToday && !labelForm.saveDb) { setLabelNote("Pick at least one: log it today, save it to the database, or both."); return; }
+    const c = Math.max(0, Math.round(cal));
+    const p = Math.max(0, Math.round(parseFloat(labelForm.p) || 0));
+    const f = Math.max(0, Math.round(parseFloat(labelForm.f) || 0));
+    if (labelForm.saveDb) {
+      const key = name.toLowerCase();
+      const entry = { k: [key], c, p, f };
+      const g = parseFloat(labelForm.g);
+      if (!isNaN(g) && g > 0) {
+        if (labelForm.liquid) { entry.ml = g; entry.liquid = true; } else entry.g = g;
+      }
+      const next = [...customFoods.filter((x) => x.k[0] !== key), entry];
+      setCustomFoods(next); customStore(next);
     }
-    const next = [...customFoods.filter((x) => x.k[0] !== name), entry];
-    setCustomFoods(next); customStore(next);
+    if (labelForm.logToday) await addEntry(name, c, p, f);
+    flash(labelForm.logToday && labelForm.saveDb ? `"${name}" logged and saved to your database`
+      : labelForm.saveDb ? `"${name}" added to your food database` : `"${name}" logged`);
     setLabelForm(null); setLabelNote("");
-    flash(`"${name}" added to your food database`);
-    if (alsoLog) await addEntry(name, entry.c, entry.p, entry.f);
   };
 
   const deleteCustomFood = (name) => {
@@ -1531,6 +1614,59 @@ function Streakhouse() {
               </div>
             )}
 
+            <div className="row">
+              <button style={{ flex: 1 }} disabled={labelBusy} onClick={() => labelRef.current && labelRef.current.click()}>
+                {labelBusy ? "reading the fine print…" : "📷 Scan a label"}
+              </button>
+              <button style={{ flex: 1 }} onClick={() => { setLabelForm({ name: "", cal: "", p: "", f: "", g: "", liquid: false, logToday: true, saveDb: true }); setLabelNote(""); }}>＋ New food</button>
+              <input ref={labelRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { scanLabel(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+            </div>
+            {labelNote && <div className="note">{labelNote}</div>}
+            {labelForm && (
+              <div className="estitem">
+                <div className="row" style={{ marginTop: 0 }}>
+                  <input value={labelForm.name} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { name: e.target.value }))} placeholder="Name (how you'll type it when logging)" aria-label="New food name" />
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <input inputMode="numeric" value={labelForm.cal} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { cal: e.target.value }))} placeholder="cal / serving" aria-label="Calories per serving" />
+                  <input inputMode="decimal" value={labelForm.p} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { p: e.target.value }))} placeholder="💪g" aria-label="Protein grams per serving" />
+                  <input inputMode="decimal" value={labelForm.f} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { f: e.target.value }))} placeholder="🥦g" aria-label="Fiber grams per serving" />
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <input inputMode="decimal" value={labelForm.g} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { g: e.target.value }))} placeholder="serving size (g or ml, optional)" aria-label="Serving size in grams or milliliters" />
+                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.liquid} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { liquid: e.target.checked }))} /> it's a drink
+                  </label>
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.logToday} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { logToday: e.target.checked }))} /> log it today
+                  </label>
+                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.saveDb} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { saveDb: e.target.checked }))} /> save to database
+                  </label>
+                </div>
+                <div className="estnote">Serving size lets "6 oz of…" or "half a…" scale correctly when you log it later.</div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <button className="pri" style={{ flex: 1 }} onClick={addLabelFood}>Add food</button>
+                  <button onClick={() => { setLabelForm(null); setLabelNote(""); }}>Cancel</button>
+                </div>
+              </div>
+            )}
+            {customFoods.length > 0 && (
+              <React.Fragment>
+                <div className="qdesc" style={{ marginTop: 10 }}>Your foods — tap to log one serving</div>
+                <div className="chips" style={{ marginTop: 4 }}>
+                  {customFoods.map((cf) => (
+                    <div key={cf.k[0]} className="chip" onClick={() => addEntry(cf.k[0], cf.c, cf.p || 0, cf.f || 0)}>
+                      {cf.k[0]} <span className="num" style={{ color: "#7A6B8E" }}>{cf.c}</span>
+                      <span className="x" role="button" aria-label={`Delete ${cf.k[0]} from food database`} onClick={(ev) => { ev.stopPropagation(); deleteCustomFood(cf.k[0]); }}>×</span>
+                    </div>
+                  ))}
+                </div>
+              </React.Fragment>
+            )}
+
             {presets.length > 0 && (
               <div className="chips">
                 {presets.map((p) => (
@@ -1604,53 +1740,6 @@ function Streakhouse() {
               </div>
             </div>
             <div className="sub">Hit both for the Macro Sweep bonus. Grams fill in via Estimate or manually.</div>
-          </div>
-
-          <div className="card">
-            <h2>Food database</h2>
-            <div className="sub">Snap a nutrition label to teach the tracker a new food. Estimate will match it by name from then on.</div>
-            <div className="row">
-              <button className="ember" style={{ flex: 1 }} disabled={labelBusy} onClick={() => labelRef.current && labelRef.current.click()}>
-                {labelBusy ? "reading the fine print…" : "📷 Scan nutrition label"}
-              </button>
-              <button onClick={() => { setLabelForm({ name: "", cal: "", p: "", f: "", g: "", liquid: false }); setLabelNote(""); }}>Type it in</button>
-              <input ref={labelRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { scanLabel(e.target.files && e.target.files[0]); e.target.value = ""; }} />
-            </div>
-            {labelNote && <div className="note">{labelNote}</div>}
-            {labelForm && (
-              <div className="estitem">
-                <div className="row" style={{ marginTop: 0 }}>
-                  <input value={labelForm.name} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { name: e.target.value }))} placeholder="Name (how you'll type it when logging)" aria-label="New food name" />
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <input inputMode="numeric" value={labelForm.cal} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { cal: e.target.value }))} placeholder="cal / serving" aria-label="Calories per serving" />
-                  <input inputMode="decimal" value={labelForm.p} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { p: e.target.value }))} placeholder="💪g" aria-label="Protein grams per serving" />
-                  <input inputMode="decimal" value={labelForm.f} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { f: e.target.value }))} placeholder="🥦g" aria-label="Fiber grams per serving" />
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <input inputMode="decimal" value={labelForm.g} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { g: e.target.value }))} placeholder="serving size (g or ml, optional)" aria-label="Serving size in grams or milliliters" />
-                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.liquid} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { liquid: e.target.checked }))} /> it's a drink
-                  </label>
-                </div>
-                <div className="estnote">Serving size lets "6 oz of…" or "half a…" scale correctly when you log it.</div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <button className="pri" style={{ flex: 1 }} onClick={() => saveCustomFood(false)}>Save food</button>
-                  <button onClick={() => saveCustomFood(true)}>Save & log now</button>
-                  <button onClick={() => { setLabelForm(null); setLabelNote(""); }}>Cancel</button>
-                </div>
-              </div>
-            )}
-            {customFoods.length > 0 && (
-              <div className="chips">
-                {customFoods.map((cf) => (
-                  <div key={cf.k[0]} className="chip" onClick={() => addEntry(cf.k[0], cf.c, cf.p || 0, cf.f || 0)} title="Tap to log one serving">
-                    {cf.k[0]} <span className="num" style={{ color: "#7A6B8E" }}>{cf.c}</span>
-                    <span className="x" role="button" aria-label={`Delete ${cf.k[0]} from food database`} onClick={(ev) => { ev.stopPropagation(); deleteCustomFood(cf.k[0]); }}>×</span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
           <div className="card">
