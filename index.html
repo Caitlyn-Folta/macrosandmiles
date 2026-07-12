@@ -466,6 +466,53 @@ function cachePut(name, entry) {
   } catch {}
 }
 
+/* ---------- AI lookup (optional) ----------
+   A personal Cloudflare Worker (see cloudflare-worker.js in the repo) that
+   asks Claude to split a whole food description and estimate each item.
+   Results cache by the full normalized text, so a repeated phrase never
+   costs a second call. The Worker URL lives in settings, not in this file. */
+const AI_CACHE_KEY = "mm:aicache:v1";
+function aiCacheGet(text) {
+  try {
+    const c = JSON.parse(localStorage.getItem(AI_CACHE_KEY) || "{}");
+    return c[text] ? c[text].items : null;
+  } catch { return null; }
+}
+function aiCachePut(text, items) {
+  try {
+    const c = JSON.parse(localStorage.getItem(AI_CACHE_KEY) || "{}");
+    c[text] = { items, t: Date.now() };
+    const keys = Object.keys(c);
+    if (keys.length > 150)
+      keys.sort((a, b) => (c[a].t || 0) - (c[b].t || 0)).slice(0, keys.length - 150).forEach((k) => delete c[k]);
+    localStorage.setItem(AI_CACHE_KEY, JSON.stringify(c));
+  } catch {}
+}
+
+async function aiLookup(aiUrl, text) {
+  const res = await fetch(aiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: text.slice(0, 600) }),
+  });
+  if (!res.ok) throw new Error(`AI lookup HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data || !Array.isArray(data.items)) throw new Error("AI lookup returned an unexpected shape");
+  return data.items.filter((it) => it && it.name && typeof it.cal === "number");
+}
+
+/* cache-aware wrapper; returns null on any failure so callers can fall back */
+async function aiEstimate(aiUrl, desc) {
+  const key = normalizeFood(desc).slice(0, 300);
+  const cached = aiCacheGet(key);
+  if (cached) return cached;
+  try {
+    const items = await aiLookup(aiUrl, desc);
+    if (items.length) aiCachePut(key, items);
+    return items;
+  } catch { return null; }
+}
+
 const NUTRIENT_IDS = { cal: [1008, 2047, 2048], p: [1003], f: [1079] };
 
 function extractNutrients(foodNutrients) {
@@ -634,26 +681,27 @@ async function offResolve(parsed) {
   };
 }
 
-async function lookupFood(desc) {
+async function lookupFood(desc, aiUrl) {
   const results = [];
+  const pending = [];
   const wordsIn = (s) => s.trim().split(/\s+/).length;
+  const localResolved = (parsed, local) => {
+    const sf = scaleFactor(parsed, local.entry);
+    return { status: "resolved", source: local.custom ? "custom" : "local", parsed, entry: applyFactor(local.entry, parsed.raw.slice(0, 50), sf.factor, sf.rough) };
+  };
   for (const seg of splitSegments(desc)) {
     const parsed = parseSegment(seg);
     if (!parsed) continue;
 
     /* A local match is only trusted outright when the keyword covers most
        of the typed name. "jalapeno popper mac n cheese" matching the plain
-       "mac n cheese" key is a WEAK match: a composite dish deserves an API
-       lookup first, with the local match kept as the offline fallback.
+       "mac n cheese" key is a WEAK match: a composite dish deserves an AI
+       or API lookup first, with the local match kept as the offline fallback.
        Custom foods are always trusted — the user named them. */
     const local = localMatch(parsed.name);
-    const localResolved = () => {
-      const sf = scaleFactor(parsed, local.entry);
-      return { status: "resolved", source: local.custom ? "custom" : "local", parsed, entry: applyFactor(local.entry, parsed.raw.slice(0, 50), sf.factor, sf.rough) };
-    };
     const strongLocal = local && (local.custom ||
       (wordsIn(parsed.name) - wordsIn(local.key) <= 1 && local.key.length * 2 >= parsed.name.length));
-    if (strongLocal) { results.push(localResolved()); continue; }
+    if (strongLocal) { results.push(localResolved(parsed, local)); continue; }
 
     const cached = cacheGet(parsed.name);
     if (cached) {
@@ -662,7 +710,43 @@ async function lookupFood(desc) {
       continue;
     }
 
-    /* Tier 4: USDA (needs key), Tier 5: Open Food Facts (keyless) as fallback */
+    results.push(null);
+    pending.push({ parsed, local, idx: results.length - 1 });
+  }
+
+  /* Everything resolved by tiers the user controls (custom foods, the
+     built-in table, past lookups)? Done — free, instant, offline. */
+  if (!pending.length) return { segments: results };
+
+  /* AI tier: anything those tiers couldn't fully cover sends the WHOLE
+     original text to Claude — it re-splits and re-portions better than the
+     regex parser, so a suspect split is thrown away rather than patched.
+     Custom foods still win by name: the user's own label scans are truth. */
+  if (aiUrl) {
+    const items = await aiEstimate(aiUrl, desc);
+    if (items && items.length) {
+      return {
+        segments: items.map((item) => {
+          const norm = normalizeFood(String(item.name));
+          const raw = item.amount ? `${item.name} — ${item.amount}` : String(item.name);
+          const local = localMatch(norm);
+          if (local && local.custom) {
+            const qm = String(item.amount || "").match(/^(\d*\.\d+|\d+(?:\.\d+)?)/);
+            const qty = qm ? parseFloat(qm[1]) : 1;
+            return { status: "resolved", source: "custom", parsed: { raw, name: norm }, entry: applyFactor(local.entry, String(item.name).slice(0, 50), qty > 0 ? qty : 1, false) };
+          }
+          return {
+            status: "resolved", source: "ai", parsed: { raw, name: norm },
+            entry: { name: String(item.name).slice(0, 50), cal: Math.round(item.cal), p: Math.round(item.protein || 0), f: Math.round(item.fiber || 0), rough: false },
+          };
+        }),
+      };
+    }
+    /* AI unreachable or empty — fall through to the USDA/OFF chain below */
+  }
+
+  /* Tier 4: USDA (needs key), Tier 5: Open Food Facts (keyless) as fallback */
+  for (const { parsed, local, idx } of pending) {
     let hit = null, err = null;
     if (USDA_KEY) {
       try {
@@ -676,8 +760,8 @@ async function lookupFood(desc) {
         if (o.status !== "none") hit = Object.assign({ source: "off", parsed }, o);
       } catch (e) { err = err || e.message; }
     }
-    if (!hit && local) { const r = localResolved(); r.entry.rough = true; results.push(r); continue; }
-    results.push(hit || { status: "none", source: err ? "error" : "noresult", parsed, error: err });
+    if (!hit && local) { const r = localResolved(parsed, local); r.entry.rough = true; results[idx] = r; continue; }
+    results[idx] = hit || { status: "none", source: err ? "error" : "noresult", parsed, error: err };
   }
   return { segments: results };
 }
@@ -1024,6 +1108,8 @@ function Streakhouse() {
   const [protDraft, setProtDraft] = useState("");
   const [fibDraft, setFibDraft] = useState("");
   const [boostDraft, setBoostDraft] = useState("0");
+  const [aiDraft, setAiDraft] = useState("");
+  const [aiNote, setAiNote] = useState("");
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoNote, setPhotoNote] = useState("");
   const fileRef = useRef(null);
@@ -1434,12 +1520,12 @@ function Streakhouse() {
 
   /* ---------- food estimate: local table -> custom foods -> cache -> USDA ----------
      Every parsed input gets its own line with the tool's estimate, editable before adding. */
-  const SOURCE_LABEL = { local: "built-in table", custom: "your food database", cache: "seen before", usda: "USDA lookup", off: "Open Food Facts" };
+  const SOURCE_LABEL = { local: "built-in table", custom: "your food database", cache: "seen before", usda: "USDA lookup", off: "Open Food Facts", ai: "✨ Claude estimate" };
   const estimate = async () => {
     if (!desc.trim()) return;
     setEstimating(true); setEstimateNote(""); setEstimateItems(null);
     try {
-      const { segments } = await lookupFood(desc);
+      const { segments } = await lookupFood(desc, settings.aiUrl);
       if (!segments.length) {
         setEstimateNote("Couldn't read that. Try something like '2 street tacos and a modelo'.");
         setEstimating(false);
@@ -1569,6 +1655,31 @@ function Streakhouse() {
     setCalDraft(String(settings.calTarget)); setStepDraft(String(settings.stepGoal));
     setProtDraft(String(settings.proteinGoal)); setFibDraft(String(settings.fiberGoal));
     setBoostDraft(String(settings.weekendShift || 0));
+    setAiDraft(settings.aiUrl || "");
+  };
+
+  /* ---------- AI lookup settings ---------- */
+  const saveAiUrl = async () => {
+    const url = aiDraft.trim().replace(/\/+$/, "");
+    if (!url) {
+      const next = Object.assign({}, settings);
+      delete next.aiUrl;
+      setSettings(next); await sset(K.settings, next);
+      setAiNote("AI lookup off — back to USDA + Open Food Facts.");
+      return;
+    }
+    if (!/^https:\/\/.+/.test(url)) { setAiNote("That doesn't look right — the Worker URL starts with https://"); return; }
+    const next = Object.assign({}, settings, { aiUrl: url });
+    setSettings(next); await sset(K.settings, next);
+    setAiNote("Saved. Testing with '1 banana'…");
+    try {
+      const items = await aiLookup(url, "1 banana");
+      setAiNote(items.length
+        ? `✨ Working — Claude says a banana runs about ${items[0].cal} cal. New foods now go through it.`
+        : "Saved, but the test came back empty — check the Worker code and its ANTHROPIC_API_KEY secret.");
+    } catch (e) {
+      setAiNote(`Saved, but the test failed (${e.message}). Check the Worker URL and that it's deployed.`);
+    }
   };
 
   /* ---------- week-in-review handlers ---------- */
@@ -2299,6 +2410,25 @@ function Streakhouse() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h2>✨ AI lookup</h2>
+            <div className="sub">
+              Optional upgrade: route unfamiliar foods through Claude instead of the USDA / Open Food Facts databases.
+              It reads casual descriptions the way a person would — mixed dishes, fractions, "a splash of" — and your
+              custom foods and past lookups still answer first, free and offline. Deploy the tiny Cloudflare Worker from{" "}
+              <code>cloudflare-worker.js</code> in the repo (instructions are at the top of that file), then paste its URL here.
+            </div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <input value={aiDraft} onChange={(e) => setAiDraft(e.target.value)} placeholder="https://your-worker.workers.dev" aria-label="AI lookup Worker URL" inputMode="url" autoCapitalize="none" autoCorrect="off" />
+            </div>
+            <div className="row">
+              <button className="pri" style={{ flex: 1 }} onClick={saveAiUrl}>{aiDraft.trim() ? "Save & test" : settings.aiUrl ? "Turn off" : "Save"}</button>
+            </div>
+            {(aiNote || settings.aiUrl) && (
+              <div className="sub" style={{ marginTop: 8 }}>{aiNote || "✨ On — new foods are estimated by Claude and cached, so each phrase only ever costs one call."}</div>
             )}
           </div>
 
