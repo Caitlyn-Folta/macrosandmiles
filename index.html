@@ -962,6 +962,7 @@ function Streakhouse() {
   const [labelForm, setLabelForm] = useState(null);
   const labelRef = useRef(null);
   const [stepInput, setStepInput] = useState("");
+  const [showHealthHelp, setShowHealthHelp] = useState(false);
   const [weightInput, setWeightInput] = useState("");
   const [calDraft, setCalDraft] = useState("");
   const [stepDraft, setStepDraft] = useState("");
@@ -1012,6 +1013,20 @@ function Streakhouse() {
       setLoaded(true);
     })();
   }, []);
+
+  /* ---------- steps handed in via URL (?steps=12345 from a Health Shortcut) ---------- */
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const n = parseInt((q.get("steps") || "").replace(/[^\d]/g, ""), 10);
+      if (!isNaN(n) && n > 0 && n < 200000) {
+        saveSteps(String(n));
+        flash(`👟 ${n.toLocaleString()} steps synced from your Shortcut`);
+      }
+      if (q.has("steps")) window.history.replaceState({}, "", window.location.pathname);
+    } catch {}
+  }, [loaded]);
 
   useEffect(() => {
     if (tab !== "photos") return;
@@ -1224,6 +1239,20 @@ function Streakhouse() {
     const n = parseInt(val != null ? val : stepInput, 10);
     if (!isNaN(n) && n >= 0) { await commitDay(Object.assign({}, day, { steps: n })); setStepInput(""); return true; }
     return false;
+  };
+  /* Reads a step count a Health Shortcut left on the clipboard. iOS shows its
+     one-tap paste confirmation; that's Apple's privacy speed bump, not a bug. */
+  const importClipboardSteps = async () => {
+    try {
+      const txt = await navigator.clipboard.readText();
+      const m = String(txt || "").replace(/[,.\s]/g, "").match(/\d{2,6}/);
+      if (!m) { flash("No step count found on the clipboard — run the Shortcut first"); return; }
+      const n = parseInt(m[0], 10);
+      await saveSteps(String(n));
+      flash(`👟 ${n.toLocaleString()} steps imported from Health`);
+    } catch {
+      flash("Couldn't read the clipboard — long-press the box and paste instead");
+    }
   };
   const savePreset = async (name, cal, p = 0, f = 0) => {
     if (presets.some((x) => x.name === name)) return;
@@ -1897,6 +1926,28 @@ function Streakhouse() {
               <input inputMode="numeric" value={stepInput} onChange={(e) => setStepInput(e.target.value)} placeholder="Count from your watch" aria-label="Step count" onKeyDown={(e) => e.key === "Enter" && saveSteps()} />
               <button className="pri" onClick={() => saveSteps()} disabled={!stepInput}>Save</button>
             </div>
+            <div className="row">
+              <button style={{ flex: 1 }} onClick={importClipboardSteps}>📲 Paste from Health Shortcut</button>
+              <button onClick={() => setShowHealthHelp(!showHealthHelp)}>{showHealthHelp ? "Hide setup" : "Link Health"}</button>
+            </div>
+            {showHealthHelp && (
+              <div className="estitem">
+                <div className="qname">One-tap steps from Apple Health / Watch</div>
+                <div className="qdesc" style={{ marginTop: 6 }}>
+                  Apple only lets native apps read Health directly — but a Shortcut can, and this app knows how to receive it. Watch steps sync into Health automatically, so this covers the watch too. One-time setup:
+                </div>
+                <ol className="qdesc" style={{ margin: "8px 0 0 18px", padding: 0 }}>
+                  <li>Open <b>Shortcuts</b> → <b>+</b> → name it <b>Send Steps</b>.</li>
+                  <li>Add action <b>Find Health Samples</b> → type <b>Steps</b>, add filter <b>Start Date is Today</b>.</li>
+                  <li>Add action <b>Calculate Statistics</b> → <b>Sum</b> of the samples.</li>
+                  <li>Add action <b>Copy to Clipboard</b> with the sum.</li>
+                  <li>Optional, for Safari users: add <b>Open URLs</b> with <span className="num">{window.location.origin + window.location.pathname}?steps=</span> followed by the sum — the app saves it on arrival.</li>
+                </ol>
+                <div className="qdesc" style={{ marginTop: 8 }}>
+                  Daily use: run the Shortcut (home-screen widget, Back Tap, or an evening automation), open this app, tap <b>Paste from Health Shortcut</b>. Two taps, no typing.
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="card">
