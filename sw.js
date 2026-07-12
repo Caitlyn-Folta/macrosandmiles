@@ -1,6 +1,6 @@
 /* Macros & Miles service worker — bump CACHE version when you change
    index.html, food-db.js, or humor-bank.js */
-const CACHE = "mm-v16";
+const CACHE = "mm-v17";
 
 const ASSETS = [
   "./",
@@ -33,7 +33,9 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = e.request.url;
-  // Nutrition lookups always go to the network; the app has its own offline fallback
+  // POSTs (the AI lookup Worker) and nutrition lookups always go to the
+  // network; the app has its own offline fallback
+  if (e.request.method !== "GET") return;
   if (url.includes("api.nal.usda.gov")) return;
   e.respondWith(
     caches.match(e.request).then(
