@@ -417,6 +417,236 @@ function mealQuipFor(added, priorCount) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+/* ================================================================
+   HUMOR BANK — user-supplied joke data + rotation logic.
+   Surfaces: pep talk (confession/official/deadpan/classic rotation,
+   seasonal folding, easter-egg roll), snack judge (data-reactive
+   triggers), day-close closer, briefing shield/streak lines, and
+   the weekend banking card. Rotation avoids repeating a line twice
+   in a row per category via localStorage lastShownLineId:<category>.
+   ================================================================ */
+
+const CONFESSION_LINES = [
+  { id: "conf-01", text: "Was today perfect? No. Is perfect required? Also no." },
+  { id: "conf-02", text: "Did the weekend go according to plan? No. Was there ever a plan? Also no." },
+  { id: "conf-03", text: "Are you drinking rosé earlier than you probably should? Yes. Is anyone stopping you? Also no." },
+  { id: "conf-04", text: "Did you eat a vegetable today? Debatable. Does debatable count? We're going with yes." },
+  { id: "conf-05", text: "Was that a reasonable portion? No. Was it delicious? Also no — it was incredible, actually." },
+  { id: "conf-06", text: "Did you plan to have dessert? No. Did dessert have other plans? Apparently." },
+  { id: "conf-07", text: "Was this a rest day? Technically. Did you rest? Also technically." },
+  { id: "conf-08", text: "Did you mean to skip breakfast? No. Did it happen anyway? Also no comment." },
+];
+
+const OFFICIAL_LINES = [
+  { id: "off-01", text: "OFFICIAL NOTICE: Streak terminated. Effective immediately. No further action required." },
+  { id: "off-02", text: "MEMO: Patio season rosé between 4–7pm is hereby reclassified as ambiance, not a decision." },
+  { id: "off-03", text: "You have reached Level {level}. This entitles you to nothing except knowing the number." },
+  { id: "off-04", text: "NOTICE OF REST DAY SHIELD DEPLOYMENT: Streak preserved by executive order. You're welcome." },
+  { id: "off-05", text: "ADVISORY: Weekend calorie bank is now open for business. Spend accordingly." },
+  { id: "off-06", text: "BULLETIN: A new personal record has been logged. No ceremony will be held." },
+  { id: "off-07", text: "PUBLIC NOTICE: Margarita has been reclassified as a seasonal vegetable, beach-adjacent subtype." },
+  { id: "off-08", text: "STATEMENT: The chip-to-dip ratio observed today has been noted and will not be discussed further." },
+  { id: "off-09", text: "DECREE: As of this login, all guilt regarding weekend brunch is hereby waived." },
+];
+/* these only make sense when the event actually happened — kept out of
+   the random rotation, wired into their data-reactive triggers below */
+const OFFICIAL_CONTEXT_ONLY = new Set(["off-01", "off-04"]);
+
+const DEADPAN_LINES = [
+  { id: "dead-01", text: "3 drinks in, everyone becomes a cardio expert." },
+  { id: "dead-02", text: "Beach margs are a constitutional right. Drink 4 is a choice you're making alone." },
+  { id: "dead-03", text: "Nobody's ever regretted stopping at 2." },
+  { id: "dead-04", text: "Chips and queso have never once been a mistake. This message has been fact-checked." },
+  { id: "dead-05", text: "Rosé doesn't count against you on a patio. This is science, probably." },
+  { id: "dead-06", text: "The bread basket was always going to win. It wins every time." },
+  { id: "dead-07", text: "Drink 3 is when the group starts planning a trip nobody will take." },
+  { id: "dead-08", text: "A salad next to fries is still mostly a salad." },
+  { id: "dead-09", text: "Holiday bevies exist outside the normal rules. Everyone knows this." },
+  { id: "dead-10", text: "Second helpings are just enthusiasm with extra steps." },
+];
+
+const DATA_REACTIVE_LINES = {
+  chipsLogged: [
+    { id: "dr-chips-01", text: "Chips happened. Correct call, everyone knows this." },
+    { id: "dr-chips-02", text: "Queso was consumed. The weekend is functioning as designed." },
+    { id: "dr-chips-03", text: "Fried food logged. Bold. Correct. Continue." },
+  ],
+  noDinnerBy8pm: [
+    { id: "dr-nodinner-01", text: "Dinner's a ghost tonight. We'll allow it." },
+    { id: "dr-nodinner-02", text: "No dinner yet. Living dangerously or just busy — either way, noted." },
+  ],
+  threePlusDrinks: [
+    { id: "dr-drinks-01", text: "Drink 3 logged. This is where the good decisions clock out. Proceed accordingly." },
+    { id: "dr-drinks-02", text: "Fourth drink noted. Hydrate like you mean it." },
+    { id: "dr-drinks-03", text: "Drink count hit 3. History suggests this is the tipping point. History is usually right." },
+  ],
+  overBudgetWithinPool: [
+    { id: "dr-overpool-01", text: "Over today, covered by the bank. The math still works. Nobody's calling about it." },
+    { id: "dr-overpool-02", text: "Weekend pool absorbed today's overage like it was built for this. Because it was." },
+  ],
+  overBudgetPoolExhausted: [
+    { id: "dr-overexh-01", text: "Over the bank too. It happens. Monday resets it, not your character." },
+    { id: "dr-overexh-02", text: "Pool's empty and today went over anyway. Filed under 'lived a little.'" },
+  ],
+  streakBrokenNoShield: [
+    { id: "dr-streak-01", text: "Streak: gone. You: fine. Everyone's fine here." },
+    { id: "dr-streak-02", text: "The streak has ended. This is not a referendum on you." },
+  ],
+  shieldUsed: [
+    { id: "dr-shield-01", text: "Shield deployed. Streak survives. This is what it's for." },
+    { id: "dr-shield-02", text: "Shield used as intended. Streak lives to fight another day." },
+  ],
+  proteinHitOverCalorie: [
+    { id: "dr-protein-01", text: "Over on calories, on target on protein. A day of contradictions. Respected." },
+    { id: "dr-protein-02", text: "Fiber goal hit in the middle of a chaos day. Impressive, honestly." },
+  ],
+  firstWeekendDrinkAfterDryWeek: [
+    { id: "dr-firstweekend-01", text: "Rosé's back on the patio. Feels right for the season." },
+    { id: "dr-firstweekend-02", text: "First weekend drink of the week, logged. The patio missed you." },
+  ],
+};
+/* fold the context-only official lines into their matching triggers */
+DATA_REACTIVE_LINES.streakBrokenNoShield = DATA_REACTIVE_LINES.streakBrokenNoShield.concat(OFFICIAL_LINES.filter((l) => l.id === "off-01"));
+DATA_REACTIVE_LINES.shieldUsed = DATA_REACTIVE_LINES.shieldUsed.concat(OFFICIAL_LINES.filter((l) => l.id === "off-04"));
+
+const SEASONAL_WINDOWS = {
+  springSummer:   { startMonth: 4,  startDay: 1,  endMonth: 9,  endDay: 30 },
+  fall:           { startMonth: 10, startDay: 1,  endMonth: 11, endDay: 15 },
+  winterHolidays: { startMonth: 11, startDay: 20, endMonth: 1,  endDay: 5  },
+  valentines:     { startMonth: 2,  startDay: 7,  endMonth: 2,  endDay: 14 },
+  julyFourth:     { startMonth: 6,  startDay: 28, endMonth: 7,  endDay: 5  },
+  laborDay:       { startMonth: 8,  startDay: 25, endMonth: 9,  endDay: 8  },
+};
+
+const SEASONAL_LINES = {
+  springSummer: [
+    { id: "sea-ss-01", text: "Rosé o'clock arrived early today. The patio doesn't judge." },
+    { id: "sea-ss-02", text: "BBQ season means everything is technically a vegetable if it was near the grill." },
+    { id: "sea-ss-03", text: "Beach margs are a constitutional right. Drink 4 is a choice you're making alone." },
+    { id: "sea-ss-04", text: "Patio rosé between 4–7pm is hereby reclassified as ambiance, not a decision." },
+    { id: "sea-ss-05", text: "Rosé's back on the patio. Feels right for the season." },
+    { id: "sea-ss-06", text: "Grilled corn with butter is a side dish. This is not up for debate." },
+    { id: "sea-ss-07", text: "Sunscreen: applied. Margarita: also applied. Priorities in order." },
+  ],
+  fall: [
+    { id: "sea-fall-01", text: "Halloween candy inventory has been logged. Quality control is ongoing." },
+    { id: "sea-fall-02", text: "Pumpkin spice everything season is upon us. The app supports this fully." },
+    { id: "sea-fall-03", text: "Tailgate snacks don't count the same. This is regional law, not app policy." },
+    { id: "sea-fall-04", text: "One (1) fun-size candy bar was 'inventory checked.' Multiple times." },
+  ],
+  winterHolidays: [
+    { id: "sea-wh-01", text: "It's a holiday. The bank exists for exactly this week." },
+    { id: "sea-wh-02", text: "Eggnog has been logged. Bold, seasonal, correct." },
+    { id: "sea-wh-03", text: "Thanksgiving plate achieved architectural levels of ambition. Respect." },
+    { id: "sea-wh-04", text: "NYE bevies noted. Drink 3 rules still apply, resolutions start tomorrow." },
+    { id: "sea-wh-05", text: "Cookie exchange haul logged. This is basically a harvest festival." },
+    { id: "sea-wh-06", text: "Holiday party appetizers: consumed with commitment. As intended." },
+  ],
+  valentines: [
+    { id: "sea-vd-01", text: "Chocolate logged on the one day it's basically mandatory." },
+    { id: "sea-vd-02", text: "Date night wine doesn't count against you today. Everyone agrees on this." },
+  ],
+  julyFourth: [
+    { id: "sea-jf-01", text: "Fireworks-adjacent eating detected. Completely normal for the holiday." },
+  ],
+  laborDay: [
+    { id: "sea-ld-01", text: "Labor Day BBQ hit different. The bank's open for it." },
+  ],
+};
+
+/* Easter egg tier: low-frequency flavor lines (~1 in 10 logins) */
+const EASTER_EGG_CHANCE = 0.1;
+
+const NOSTALGIA_LINES = [
+  { id: "nost-01", text: "This meal has more effort than your AIM away message ever got." },
+  { id: "nost-02", text: "You chose water over La Croix. Bold. Unnecessary. Respected anyway." },
+  { id: "nost-03", text: "Somewhere a Capri Sun is being ignored in favor of adult beverages. Character growth." },
+  { id: "nost-04", text: "You just used a fork properly for an entire meal. TRL would be proud." },
+  { id: "nost-05", text: "Dial-up loaded faster than you're deciding on dinner. Some things never change." },
+  { id: "nost-06", text: "You logged this meal instead of just vibing. Very unlike your Blockbuster-era self." },
+  { id: "nost-07", text: "No one's rewinding this VHS. The day is what it is." },
+  { id: "nost-08", text: "You had a snack the size of a Dunkaroo. Immaculate portion control, actually." },
+  { id: "nost-09", text: "Away message status: 'brb, making good choices.' Historically inaccurate but we'll allow it." },
+];
+
+const FORTIES_LINES = [
+  { id: "forty-01", text: "Your back hurt before you ate anything. Unrelated. Probably." },
+  { id: "forty-02", text: "You used to stay out for this. Now you're in bed by 9:30, undefeated." },
+  { id: "forty-03", text: "NOTICE: You have officially reached the age where 'I'll deal with it tomorrow' actually happens tomorrow, at a specific time, with consequences." },
+  { id: "forty-04", text: "Wine used to be a Tuesday thing. Now Tuesday needs advance notice." },
+  { id: "forty-05", text: "You read the nutrition label unprompted. Nobody made you. Growth." },
+  { id: "forty-06", text: "You did the math on how many drinks equal one recovery day. Very 40s of you." },
+  { id: "forty-07", text: "Bedtime moved up an hour and nobody even negotiated. It just happened." },
+  { id: "forty-08", text: "You said 'I can't eat like that anymore' out loud, unprompted, to no one. Welcome." },
+  { id: "forty-09", text: "Two drinks in, you're already thinking about tomorrow's plans. Mature. Slightly annoying. Correct." },
+];
+
+const PERI_LINES = [
+  { id: "peri-01", text: "Your thermostat and your hormones are in a heated disagreement. Literally." },
+  { id: "peri-02", text: "Cried at a car commercial today. No further explanation offered or required." },
+  { id: "peri-03", text: "Forgot why you walked into this room. The room has no comment either." },
+  { id: "peri-04", text: "Rage-cleaned a drawer at 11pm for reasons that remain classified." },
+  { id: "peri-05", text: "Hot flash mid-Zoom call: logged, survived, unbothered." },
+];
+
+const EASTER_EGG_LINES = NOSTALGIA_LINES.concat(FORTIES_LINES, PERI_LINES);
+
+function isDateInWindow(date, window) {
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const asNum = (m, d) => m * 100 + d;
+  const cur = asNum(month, day);
+  const start = asNum(window.startMonth, window.startDay);
+  const end = asNum(window.endMonth, window.endDay);
+  if (start <= end) return cur >= start && cur <= end;
+  return cur >= start || cur <= end; /* wraps year boundary */
+}
+
+function getActiveSeasonalLines(date = new Date()) {
+  let active = [];
+  for (const key of Object.keys(SEASONAL_WINDOWS)) {
+    if (isDateInWindow(date, SEASONAL_WINDOWS[key])) active = active.concat(SEASONAL_LINES[key] || []);
+  }
+  return active;
+}
+
+function pickRandomLine(pool, lastId) {
+  if (!pool || pool.length === 0) return null;
+  const eligible = pool.length > 1 ? pool.filter((l) => l.id !== lastId) : pool;
+  return eligible[Math.floor(Math.random() * eligible.length)];
+}
+
+/* category: 'confession' | 'official' | 'deadpan' | 'classic' | 'dataReactive:<trigger>' */
+function pickLine(category, { storage = window.localStorage, date = new Date(), includeSeasonal = true, allowEasterEgg = true } = {}) {
+  try {
+    const storageKey = `lastShownLineId:${category}`;
+    const lastId = storage.getItem(storageKey);
+
+    const isCoreCategory = category === "confession" || category === "official" || category === "deadpan" || category === "classic";
+    if (allowEasterEgg && isCoreCategory && Math.random() < EASTER_EGG_CHANCE) {
+      const eggKey = "lastShownLineId:easterEgg";
+      const chosenEgg = pickRandomLine(EASTER_EGG_LINES, storage.getItem(eggKey));
+      if (chosenEgg) { storage.setItem(eggKey, chosenEgg.id); return chosenEgg; }
+    }
+
+    let pool;
+    if (category.startsWith("dataReactive:")) {
+      pool = DATA_REACTIVE_LINES[category.split(":")[1]] || [];
+    } else {
+      const base =
+        category === "confession" ? CONFESSION_LINES :
+        category === "official" ? OFFICIAL_LINES.filter((l) => !OFFICIAL_CONTEXT_ONLY.has(l.id)) :
+        category === "deadpan" ? DEADPAN_LINES :
+        category === "classic" ? PEP_TALKS.map((t, i) => ({ id: "pep-" + i, text: t })) : [];
+      pool = includeSeasonal && category !== "classic" ? base.concat(getActiveSeasonalLines(date)) : base;
+    }
+
+    const chosen = pickRandomLine(pool, lastId);
+    if (chosen) storage.setItem(storageKey, chosen.id);
+    return chosen;
+  } catch { return null; }
+}
+
 const scoreQuip = (s) =>
   s >= 90 ? "Flawless. The prosecution rests." :
   s >= 70 ? "Strong showing. The jury is visibly impressed." :
@@ -1013,7 +1243,8 @@ function buildBriefing(yds, history, settings) {
 
   if (rec && rec.shield) {
     headline = "Yesterday was shielded. 🛡";
-    tone = "A banked perfect-day token covered it automatically. That's not luck — that's savings. The streak never felt a thing.";
+    const shieldLine = pickLine("dataReactive:shieldUsed");
+    tone = shieldLine ? shieldLine.text : "A banked perfect-day token covered it automatically. That's not luck — that's savings.";
   } else if (!rec || (!rec.e && !rec.s)) {
     headline = pick(["Yesterday went unrecorded.", "The docket shows a blank page."], "h");
     tone = pick([
@@ -1066,7 +1297,15 @@ function buildBriefing(yds, history, settings) {
     "Today's mission: one honest log at a time. That's the whole trick.",
   ], "m");
 
-  return { yds, headline, facts, tone, mission };
+  /* a streak that ended yesterday (without a shield) gets its own line */
+  const qual = (ds) => { const r = history[ds]; return !!r && (r.shield || ((r.c || 0) > 0 && (r.s || 0) >= settings.stepGoal && onPlanCal(ds, history, settings, null, null))); };
+  let extra = null;
+  if (!(rec && rec.shield) && !qual(yds) && qual(shiftDate(yds, -1))) {
+    const l = pickLine("dataReactive:streakBrokenNoShield");
+    if (l) extra = l.text;
+  }
+
+  return { yds, headline, facts, tone, mission, extra };
 }
 
 /* ---------- the weekend burrito: fills as the pool gets eaten ----------
@@ -1411,7 +1650,18 @@ function Streakhouse() {
   const quests = useMemo(() => questsForDate(today), [today]);
   /* fresh jokes on every app open, stable for the session */
   const [funSeed] = useState(() => String(Math.floor(Math.random() * 1e9)));
-  const pepTalk = PEP_TALKS[hashStr("pep" + funSeed) % PEP_TALKS.length];
+  /* pep talk rotates across the humor bank's categories once per open;
+     seasonal lines fold in automatically, easter eggs at ~1 in 10 */
+  const [pepTalk] = useState(() => {
+    const cats = ["confession", "official", "deadpan", "classic"];
+    const line = pickLine(cats[Math.floor(Math.random() * cats.length)]);
+    return line ? line.text : PEP_TALKS[0];
+  });
+  /* one ambient line for the weekend banking card, per open */
+  const [bankQuip] = useState(() => {
+    const line = pickLine(Math.random() < 0.5 ? "deadpan" : "official");
+    return line ? line.text : "";
+  });
   const foodPh = FOOD_PLACEHOLDERS[hashStr("ph" + funSeed) % FOOD_PLACEHOLDERS.length];
   const emptyLine = EMPTY_LOG_LINES[hashStr("mt" + funSeed) % EMPTY_LOG_LINES.length];
   const questStatus = quests.map((q) => (q.manual ? !!day.mq[q.id] : q.test(ctx)));
@@ -1535,7 +1785,29 @@ function Streakhouse() {
     }));
     await commitDay(Object.assign({}, day, { entries: [...day.entries, ...es], xp: day.xp + 5 * es.length }));
     await awardXp(5 * es.length);
-    setMealQuip(mealQuipFor(es, day.entries.length));
+
+    /* humor bank data-reactive triggers get first crack at the quip */
+    const allEntries = [...day.entries, ...es];
+    const addedNames = es.map((e) => e.name.toLowerCase()).join(" ");
+    const DRINK_RE = /beer|wine|margarita|cocktail|seltzer|tequila|vodka|whiskey|modelo|mimosa|sangria|spritz|claw|ros[eé]|prosecco|champagne|shot/;
+    const triggers = [];
+    if (/chips|queso|nacho|fried|fries/.test(addedNames)) triggers.push("chipsLogged");
+    if (DRINK_RE.test(addedNames) && allEntries.filter((e) => DRINK_RE.test(e.name.toLowerCase())).length >= 3) triggers.push("threePlusDrinks");
+    const newTotal = allEntries.reduce((a, e) => a + e.cal, 0);
+    let overToday = false;
+    if (poolDay) {
+      const spentNow = poolSpent - total + newTotal;
+      if (spentNow > pool) { triggers.push("overBudgetPoolExhausted"); overToday = true; }
+      else if (newTotal > Math.round(poolBase(settings) / 3)) { triggers.push("overBudgetWithinPool"); overToday = true; }
+    } else if (newTotal > dailyBudget) overToday = true;
+    if (overToday && allEntries.reduce((a, e) => a + (e.p || 0), 0) >= settings.proteinGoal) triggers.push("proteinHitOverCalorie");
+
+    let quip = null;
+    if (triggers.length && Math.random() < 0.65) {
+      const line = pickLine("dataReactive:" + triggers[Math.floor(Math.random() * triggers.length)]);
+      if (line) quip = line.text;
+    }
+    setMealQuip(quip || mealQuipFor(es, day.entries.length));
     setDesc(""); setCalInput(""); setProtInput(""); setFibInput(""); setEstimateNote(""); setEstimateItems(null);
   };
   const addEntry = (name, cal, p = 0, f = 0) => addEntries([{ name, cal, p, f }]);
@@ -1843,6 +2115,10 @@ function Streakhouse() {
         score, xp, lines, tokenEarned,
         levelUp: afterLevel > beforeLevel ? afterLevel : null,
         evidence: evidenceLine({ date: today, comeback, onPlan14, streak: newStreak, bestStreak: prof.bestStreak, weekSteps, stepGoal: settings.stepGoal, weightDelta: wd, protein7 }),
+        closer: (() => {
+          const l = pickLine(tokenEarned || afterLevel > beforeLevel ? "official" : "confession");
+          return l ? l.text.split("{level}").join(afterLevel) : "";
+        })(),
       },
     });
   };
@@ -2052,7 +2328,7 @@ function Streakhouse() {
         <React.Fragment>
           <div className="peptalk">
             <div className="pt-label">Today's pep talk</div>
-            <div className="pt-line">{pepTalk}</div>
+            <div className="pt-line">{pepTalk.split("{level}").join(level)}</div>
           </div>
           {nudge && (
             <div className="nudge">
@@ -2088,6 +2364,9 @@ function Streakhouse() {
             )}
             {poolDay && bank > 0 && (
               <div className="bank num">🏦 Your Mon–Thu banking added {bankEarned(today, history, settings, null, null).toLocaleString()} cal to this pool. Date night is pre-funded.</div>
+            )}
+            {poolDay && bankQuip && (
+              <div className="estnote" style={{ textAlign: "center", marginTop: 8 }}>{bankQuip.split("{level}").join(level)}</div>
             )}
 
             {poolDay && weekendPlan && (
@@ -2673,6 +2952,7 @@ function Streakhouse() {
               </div>
             )}
             <div className="sub" style={{ marginTop: 10 }}>{briefing.tone}</div>
+            {briefing.extra && <div className="sub" style={{ marginTop: 6 }}>{briefing.extra}</div>}
             <div className="evidence">{briefing.mission}</div>
             <div className="row"><button className="pri" style={{ width: "100%" }} onClick={() => setBriefing(null)}>Court is in session →</button></div>
           </div>
@@ -2745,6 +3025,7 @@ function Streakhouse() {
                 {closeFlow.reveal.tokenEarned && <div className="note" style={{ color: "#00B3A4" }}>🛡 Rest Day token earned — 7 perfect days banked one automatic shield.</div>}
                 {closeFlow.reveal.levelUp && <div className="note" style={{ color: "#7A2FF2" }}>LEVEL {closeFlow.reveal.levelUp} — new analytics unlocked in Trends.</div>}
                 <div className="evidence">{closeFlow.reveal.evidence}</div>
+                {closeFlow.reveal.closer && <div className="sub" style={{ textAlign: "center", marginTop: 10 }}>{closeFlow.reveal.closer}</div>}
                 <div className="row"><button className="pri" style={{ width: "100%" }} onClick={() => { setCloseFlow(null); if (dow(today) === 0) openSundayReview(); }}>Done</button></div>
               </React.Fragment>
             )}
