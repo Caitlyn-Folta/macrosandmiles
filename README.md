@@ -21,6 +21,8 @@ USDA API key lives near the top of index.html: const USDA_KEY = "". Free key fro
 
 The humor. Pep talks, empty-log lines, and the "snack judge" (the quip that reacts to every food entry) live in PEP_TALKS, EMPTY_LOG_LINES, GENERIC_REACTIONS, and FOOD_REACTIONS in index.html. House rules for new lines: react to the food, the hour, or the habit — never weight, photos, or the person; witty, never shameful.
 
+Weekend game plan. On Fri–Sun the budget card swaps its bar for a burrito SVG that fills as the pool is eaten (BurritoMeter in index.html), and shows a per-day allocation: even three-way split by default, or tap Fri/Sat/Sun pips to mark heavy days — they get a 1.6× weighted share. The choice persists in settings.heavyDays (day-of-week numbers), so date night stays planned week after week. A live "stay near ~X today" line re-splits whatever pool remains across the remaining days.
+
 Apple Health / Watch steps. Web apps can't read HealthKit directly (native-app only), so the app bridges via an iOS Shortcut: Find Health Samples (Steps, Start Date is Today) → Calculate Statistics (Sum) → Copy to Clipboard, optionally + Open URLs with the app address + ?steps= + the sum. In the app, the Steps card's "Paste from Health Shortcut" button imports the copied count, and a ?steps=N URL parameter auto-saves on load. Setup instructions live in the app under Steps → Link Health. Watch steps sync into Health, so this covers the watch too.
 
 Backups. Data exists only on the phone. Use Settings → Export backup (JSON) in the app occasionally and save the file somewhere safe.
