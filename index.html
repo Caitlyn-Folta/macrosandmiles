@@ -145,7 +145,7 @@ const totalFib = (day) => day.entries.reduce((a, e) => a + (e.f || 0), 0);
 const emptyDay = (date) => ({ date, entries: [], steps: 0, closed: false, mq: {}, xp: 0 });
 
 const sget = async (k) => { try { const r = await window.storage.get(k); return r ? JSON.parse(r.value) : null; } catch { return null; } };
-const sset = async (k, v) => { try { await window.storage.set(k, JSON.stringify(v)); return true; } catch (e) { console.error("storage", e); return false; } };
+const sset = async (k, v) => { try { await window.storage.set(k, JSON.stringify(v)); syncTouch(k); return true; } catch (e) { console.error("storage", e); return false; } };
 
 /* ---------- weekly banking math ----------
    weekendShift moves calories from each Mon-Thu day into the Fri-Sun pool:
@@ -435,7 +435,7 @@ function customLoad() {
   try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) || "[]"); } catch { return []; }
 }
 function customStore(list) {
-  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); } catch {}
+  try { localStorage.setItem(CUSTOM_KEY, JSON.stringify(list)); syncTouch("mm:customfoods"); } catch {}
 }
 
 function localMatch(name) {
@@ -511,6 +511,206 @@ async function aiEstimate(aiUrl, desc) {
     if (items.length) aiCachePut(key, items);
     return items;
   } catch { return null; }
+}
+
+/* ---------- device sync (optional) ----------
+   Backed by the same Cloudflare Worker (its /sync endpoint + a KV store).
+   The whole dataset — except photos, which are too big — travels as one
+   document of { key: { v: json-string, t: last-touched-ms } }. Each device
+   keeps its own touch times (mm:sync:v1 in localStorage, never synced) and
+   on every sync pulls, merges, and pushes: newest edit wins per key, but
+   day logs union their entries, and period days / custom foods / history
+   union too, so two devices logging the same day both keep their food.
+   Auth is the sync code alone — treat it like a password. */
+const SYNC_CFG_KEY = "mm:sync:v1";
+const syncCfg = () => { try { return JSON.parse(localStorage.getItem(SYNC_CFG_KEY) || "null"); } catch { return null; } };
+const syncCfgSet = (c) => { try { c ? localStorage.setItem(SYNC_CFG_KEY, JSON.stringify(c)) : localStorage.removeItem(SYNC_CFG_KEY); } catch {} };
+
+const genSyncCode = () => {
+  const alpha = "ABCDEFGHJKMNPQRSTVWXYZ23456789"; /* no 0/O/1/I/L/U */
+  const a = new Uint8Array(20);
+  crypto.getRandomValues(a);
+  return [...a].map((b) => alpha[b % alpha.length]).join("").replace(/(.{5})(?!$)/g, "$1-");
+};
+
+let syncTimer = null;
+let syncBusy = false;
+let syncApplying = false; /* true while adopting remote values, so those writes don't re-touch */
+let syncOnChange = null;  /* app hook: remote changes were applied locally */
+let syncOnStatus = null;  /* app hook: { ok, at?, err? } after each attempt */
+
+function syncTouch(key) {
+  if (syncApplying) return;
+  const cfg = syncCfg();
+  if (!cfg) return;
+  cfg.kts = cfg.kts || {};
+  cfg.kts[key] = Date.now();
+  cfg.dirty = true;
+  syncCfgSet(cfg);
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => { syncNow("change"); }, 4000);
+}
+
+const syncReadRaw = async (k) =>
+  k === "mm:customfoods" ? (localStorage.getItem(CUSTOM_KEY) || "[]") : ((await window.storage.get(k)) || {}).value;
+const syncWriteRaw = async (k, raw) => {
+  if (k === "mm:customfoods") localStorage.setItem(CUSTOM_KEY, raw);
+  else await window.storage.set(k, raw);
+};
+
+async function syncBuildDoc(kts) {
+  const { keys } = await window.storage.list("sh:");
+  const doc = { v: 1, keys: {} };
+  for (const k of keys) {
+    if (String(k).startsWith("sh:photo")) continue; /* photos + their index stay per-device */
+    const r = await window.storage.get(k);
+    if (r && r.value != null) doc.keys[k] = { v: r.value, t: (kts && kts[k]) || 0 };
+  }
+  doc.keys["mm:customfoods"] = { v: localStorage.getItem(CUSTOM_KEY) || "[]", t: (kts && kts["mm:customfoods"]) || 0 };
+  return doc;
+}
+
+/* union-merge helpers — all take/return JSON strings */
+const parseOr = (raw, fb) => { try { const v = JSON.parse(raw); return v == null ? fb : v; } catch { return fb; } };
+function deepEq(x, y) {
+  if (x === y) return true;
+  if (typeof x !== typeof y || x == null || y == null || typeof x !== "object") return false;
+  if (Array.isArray(x) !== Array.isArray(y)) return false;
+  const kx = Object.keys(x), ky = Object.keys(y);
+  return kx.length === ky.length && kx.every((k) => deepEq(x[k], y[k]));
+}
+/* semantic equality, so key/sort order never reads as a data change */
+const deepEqRaw = (aRaw, bRaw) => aRaw === bRaw || deepEq(parseOr(aRaw, "__a"), parseOr(bRaw, "__b"));
+function mergeDayRaw(aRaw, bRaw) {
+  const a = parseOr(aRaw, null), b = parseOr(bRaw, null);
+  if (!a) return bRaw; if (!b) return aRaw;
+  /* keep local entry order and append what only the remote has — a merge
+     where the remote is a subset must equal the local doc exactly, or every
+     sync would read as a change and trigger a refresh */
+  const seen = new Set((a.entries || []).map((e) => e.id));
+  const entries = [...(a.entries || []), ...(b.entries || []).filter((e) => !seen.has(e.id)).sort((x, y) => (x.id > y.id ? 1 : -1))];
+  const mq = {};
+  for (const q of new Set([...Object.keys(a.mq || {}), ...Object.keys(b.mq || {})])) mq[q] = !!((a.mq || {})[q] || (b.mq || {})[q]);
+  const out = Object.assign({}, b, a, { /* local scalars win; unions below */
+    entries,
+    steps: Math.max(a.steps || 0, b.steps || 0),
+    xp: Math.max(a.xp || 0, b.xp || 0),
+    closed: !!(a.closed || b.closed),
+    mq,
+  });
+  return JSON.stringify(out);
+}
+function mergeArrayUnion(aRaw, bRaw) {
+  const a = parseOr(aRaw, []), b = parseOr(bRaw, []);
+  return JSON.stringify([...new Set([...a, ...b])].sort());
+}
+function mergeWeights(aRaw, bRaw, preferA) {
+  const byDate = {};
+  for (const w of preferA ? [...parseOr(bRaw, []), ...parseOr(aRaw, [])] : [...parseOr(aRaw, []), ...parseOr(bRaw, [])]) byDate[w.d] = w;
+  return JSON.stringify(Object.values(byDate).sort((x, y) => (x.d > y.d ? 1 : -1)));
+}
+function mergeCustomFoods(aRaw, bRaw, preferA) {
+  const byName = {};
+  for (const f of preferA ? [...parseOr(bRaw, []), ...parseOr(aRaw, [])] : [...parseOr(aRaw, []), ...parseOr(bRaw, [])])
+    if (f && f.k && f.k[0]) byName[f.k[0]] = f;
+  return JSON.stringify(Object.values(byName));
+}
+function mergeHistory(aRaw, bRaw, preferA) {
+  const a = parseOr(aRaw, {}), b = parseOr(bRaw, {});
+  return JSON.stringify(preferA ? Object.assign({}, b, a) : Object.assign({}, a, b));
+}
+
+/* pull remote values into local storage; returns what happened */
+async function syncMerge(remoteDoc, cfg) {
+  const kts = cfg.kts || {};
+  let changedLocal = false;
+  let pushNeeded = false;
+  if (remoteDoc && remoteDoc.keys) {
+    syncApplying = true;
+    try {
+      for (const [k, rec] of Object.entries(remoteDoc.keys)) {
+        const rt = rec.t || 0;
+        const lt = kts[k] || 0;
+        const localRaw = await syncReadRaw(k);
+        if (localRaw === rec.v) { if (rt > lt) kts[k] = rt; continue; }
+        if (localRaw == null) { await syncWriteRaw(k, rec.v); kts[k] = rt; changedLocal = true; continue; }
+        const preferLocal = lt >= rt;
+        let merged = null;
+        if (k.startsWith("sh:day:")) merged = mergeDayRaw(localRaw, rec.v);
+        else if (k === "sh:cycle") merged = mergeArrayUnion(localRaw, rec.v);
+        else if (k === "sh:weight") merged = mergeWeights(localRaw, rec.v, preferLocal);
+        else if (k === "mm:customfoods") merged = mergeCustomFoods(localRaw, rec.v, preferLocal);
+        else if (k === "sh:history") merged = mergeHistory(localRaw, rec.v, preferLocal);
+        if (merged != null) {
+          if (!deepEqRaw(merged, localRaw)) { await syncWriteRaw(k, merged); changedLocal = true; }
+          /* merged result differs from remote -> it must be uploaded and win the next LWW */
+          if (!deepEqRaw(merged, rec.v)) { kts[k] = Date.now(); pushNeeded = true; } else kts[k] = Math.max(lt, rt);
+        } else if (rt > lt) {
+          await syncWriteRaw(k, rec.v); kts[k] = rt; changedLocal = true;
+        } else {
+          pushNeeded = true; /* local is newer; carry it up */
+        }
+      }
+    } finally { syncApplying = false; }
+  }
+  /* anything local the remote has never seen also needs uploading */
+  const { keys } = await window.storage.list("sh:");
+  const remoteKeys = (remoteDoc && remoteDoc.keys) || {};
+  for (const k of [...keys.filter((k) => !String(k).startsWith("sh:photo")), "mm:customfoods"])
+    if (!remoteKeys[k]) { pushNeeded = true; break; }
+  cfg.kts = kts;
+  syncCfgSet(cfg);
+  return { changedLocal, pushNeeded };
+}
+
+/* read-modify-write on the sync config so concurrent syncTouch stamps survive */
+const syncCfgMerge = (patch) => { const c = syncCfg(); if (!c) return null; Object.assign(c, patch); syncCfgSet(c); return c; };
+
+async function syncNow(reason) {
+  const cfg = syncCfg();
+  if (!cfg || !cfg.url || !cfg.code || syncBusy) return { ok: false, skipped: true };
+  syncBusy = true;
+  try {
+    let result = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await fetch(cfg.url + "/sync", { headers: { "x-sync-code": cfg.code } });
+      if (!res.ok) throw new Error(`sync HTTP ${res.status}`);
+      const remote = await res.json();
+      const { changedLocal, pushNeeded } = await syncMerge(remote.data, syncCfg() || cfg);
+      const fresh = syncCfg() || cfg;
+      if (!pushNeeded && !fresh.dirty && remote.rev > 0) {
+        syncCfgMerge({ rev: remote.rev, last: Date.now() });
+        result = { ok: true, changedLocal };
+        break;
+      }
+      /* clear dirty BEFORE building the doc: anything touched after this
+         point re-sets it and gets picked up by the follow-up push below */
+      syncCfgMerge({ dirty: false });
+      const doc = await syncBuildDoc((syncCfg() || fresh).kts);
+      const put = await fetch(cfg.url + "/sync", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-sync-code": cfg.code },
+        body: JSON.stringify({ baseRev: remote.rev, data: doc }),
+      });
+      if (put.status === 409) { syncCfgMerge({ dirty: true }); continue; } /* another device pushed first — pull and merge again */
+      if (!put.ok) { syncCfgMerge({ dirty: true }); throw new Error(`sync HTTP ${put.status}`); }
+      const fin = await put.json();
+      syncCfgMerge({ rev: fin.rev, last: Date.now() });
+      result = { ok: true, changedLocal };
+      break;
+    }
+    if (!result) throw new Error("devices kept racing — try again");
+    if (syncOnStatus) syncOnStatus({ ok: true, at: Date.now() });
+    if (result.changedLocal && syncOnChange) syncOnChange();
+    return result;
+  } catch (e) {
+    if (syncOnStatus) syncOnStatus({ ok: false, err: e.message });
+    return { ok: false, err: e.message };
+  } finally {
+    syncBusy = false;
+    const after = syncCfg();
+    if (after && after.dirty) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow("followup"), 1500); }
+  }
 }
 
 const NUTRIENT_IDS = { cal: [1008, 2047, 2048], p: [1003], f: [1079] };
@@ -861,8 +1061,13 @@ function buildWeekReview(mon, history, weights, settings) {
 
 /* Entry ids must be unique — two adds in the same millisecond would share a
    Date.now() id, making edit/delete hit both. Strictly monotonic instead. */
+/* monotonic per device, with sub-ms jitter so two SYNCED devices logging in
+   the same millisecond don't mint the same id (ids drive the entry union) */
 let lastEntryId = 0;
-const nextEntryId = () => { lastEntryId = Math.max(lastEntryId + 1, Date.now()); return lastEntryId; };
+const nextEntryId = () => {
+  lastEntryId = Math.max(lastEntryId + 1, Date.now() * 1000 + Math.floor(Math.random() * 1000));
+  return lastEntryId;
+};
 
 /* ---------- morning briefing: yesterday's verdict, today's motivation ----------
    Same house rules as all humor: react to the data and the habit, never
@@ -1110,6 +1315,11 @@ function Streakhouse() {
   const [boostDraft, setBoostDraft] = useState("0");
   const [aiDraft, setAiDraft] = useState("");
   const [aiNote, setAiNote] = useState("");
+  const [syncInfo, setSyncInfo] = useState(() => syncCfg());
+  const [syncUrlDraft, setSyncUrlDraft] = useState("");
+  const [syncCodeDraft, setSyncCodeDraft] = useState("");
+  const [syncNote, setSyncNote] = useState("");
+  const [syncShowCode, setSyncShowCode] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoNote, setPhotoNote] = useState("");
   const fileRef = useRef(null);
@@ -1175,6 +1385,19 @@ function Streakhouse() {
       setLoaded(true);
     })();
   }, []);
+
+  /* ---------- device sync hooks ---------- */
+  useEffect(() => {
+    syncOnStatus = () => setSyncInfo(syncCfg());
+    syncOnChange = () => { flash("Synced updates from your other device — refreshing"); setTimeout(() => window.location.reload(), 900); };
+    const onVis = () => {
+      const c = syncCfg();
+      if (document.visibilityState === "visible" && c && Date.now() - (c.last || 0) > 60000) syncNow("focus");
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { syncOnStatus = null; syncOnChange = null; document.removeEventListener("visibilitychange", onVis); };
+  }, []);
+  useEffect(() => { if (loaded) syncNow("open"); }, [loaded]);
 
   /* ---------- steps handed in via URL (?steps=12345 from a Health Shortcut) ---------- */
   useEffect(() => {
@@ -1680,6 +1903,55 @@ function Streakhouse() {
     } catch (e) {
       setAiNote(`Saved, but the test failed (${e.message}). Check the Worker URL and that it's deployed.`);
     }
+  };
+
+  /* ---------- device sync handlers ---------- */
+  const syncWorkerUrl = () => (syncUrlDraft.trim() || settings.aiUrl || "").replace(/\/+$/, "");
+  const startSync = async () => {
+    const url = syncWorkerUrl();
+    if (!/^https:\/\/.+/.test(url)) { setSyncNote("Needs your Worker URL (https://…workers.dev) — same one as the AI lookup."); return; }
+    const code = genSyncCode();
+    const kts = {};
+    const now = Date.now();
+    const { keys } = await window.storage.list("sh:");
+    for (const k of keys) if (!String(k).startsWith("sh:photo")) kts[k] = now;
+    kts["mm:customfoods"] = now;
+    syncCfgSet({ url, code, rev: 0, kts, dirty: true });
+    setSyncNote("Setting up…");
+    const r = await syncNow("start");
+    if (r.ok) {
+      setSyncInfo(syncCfg()); setSyncNote(""); setSyncShowCode(true);
+      flash("Sync is on — enter the code on your other device");
+    } else {
+      syncCfgSet(null); setSyncInfo(null);
+      setSyncNote(`Couldn't reach the Worker (${r.err}). Is the MM_SYNC KV binding set up? Steps 5–6 in cloudflare-worker.js.`);
+    }
+  };
+  const joinSync = async () => {
+    const url = syncWorkerUrl();
+    const code = syncCodeDraft.trim().toUpperCase();
+    if (!/^https:\/\/.+/.test(url)) { setSyncNote("Needs the Worker URL from your first device."); return; }
+    if (code.replace(/-/g, "").length < 12) { setSyncNote("That code looks too short — copy it exactly from the other device."); return; }
+    syncCfgSet({ url, code, rev: 0, kts: {}, dirty: true });
+    setSyncNote("Connecting…");
+    const r = await syncNow("join");
+    if (r.ok) {
+      setSyncInfo(syncCfg()); setSyncNote(""); setSyncCodeDraft("");
+      if (!r.changedLocal) flash("Connected — this device is up to date");
+    } else {
+      syncCfgSet(null); setSyncInfo(null);
+      setSyncNote(`Couldn't connect (${r.err}). Check the URL and code.`);
+    }
+  };
+  const syncNowClick = async () => {
+    setSyncNote("Syncing…");
+    const r = await syncNow("manual");
+    setSyncInfo(syncCfg());
+    setSyncNote(r.ok ? "" : `Sync failed (${r.err}).`);
+  };
+  const stopSync = () => {
+    syncCfgSet(null); setSyncInfo(null); setSyncShowCode(false);
+    flash("Sync is off on this device. Local data stays put.");
   };
 
   /* ---------- week-in-review handlers ---------- */
@@ -2430,6 +2702,47 @@ function Streakhouse() {
             {(aiNote || settings.aiUrl) && (
               <div className="sub" style={{ marginTop: 8 }}>{aiNote || "✨ On — new foods are estimated by Claude and cached, so each phrase only ever costs one call."}</div>
             )}
+          </div>
+
+          <div className="card">
+            <h2>🔄 Sync</h2>
+            {!syncInfo ? (
+              <React.Fragment>
+                <div className="sub">
+                  Keep your phone and computer on the same data, stored in your own Cloudflare account
+                  (needs the small KV add-on to the Worker — steps 5–6 in <code>cloudflare-worker.js</code>).
+                  Photos stay on the device they were taken on; everything else syncs. The sync code is
+                  the only key to your data — treat it like a password.
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <input value={syncUrlDraft} onChange={(e) => setSyncUrlDraft(e.target.value)} placeholder={settings.aiUrl ? "Worker URL (blank = same as AI lookup)" : "https://your-worker.workers.dev"} aria-label="Sync Worker URL" inputMode="url" autoCapitalize="none" autoCorrect="off" />
+                </div>
+                <div className="row"><button className="pri" style={{ width: "100%" }} onClick={startSync}>Turn on — this is my first device</button></div>
+                <div className="qdesc" style={{ marginTop: 12 }}>Already turned it on elsewhere? Enter that device's code:</div>
+                <div className="row" style={{ marginTop: 4 }}>
+                  <input value={syncCodeDraft} onChange={(e) => setSyncCodeDraft(e.target.value)} placeholder="ABCDE-FGHJK-MNPQR-STVWX" aria-label="Sync code" autoCapitalize="characters" autoCorrect="off" />
+                </div>
+                <div className="row"><button style={{ width: "100%" }} onClick={joinSync}>Connect this device</button></div>
+              </React.Fragment>
+            ) : (
+              <React.Fragment>
+                <div className="sub">
+                  🟢 On — {syncInfo.last ? `last synced ${new Date(syncInfo.last).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "not synced yet"}.
+                  Changes push a few seconds after you make them and pull when you come back to the app. Photos stay per-device.
+                </div>
+                <div className="qdesc" style={{ marginTop: 10 }}>Sync code for your other devices:</div>
+                {syncShowCode ? (
+                  <div className="num" style={{ fontSize: 15, fontWeight: 700, margin: "4px 0 2px", userSelect: "all", wordBreak: "break-all" }}>{syncInfo.code}</div>
+                ) : (
+                  <div className="row" style={{ marginTop: 4 }}><button style={{ width: "100%" }} onClick={() => setSyncShowCode(true)}>Show code</button></div>
+                )}
+                <div className="row" style={{ marginTop: 10 }}>
+                  <button className="pri" style={{ flex: 1 }} onClick={syncNowClick}>Sync now</button>
+                  <button onClick={stopSync}>Turn off</button>
+                </div>
+              </React.Fragment>
+            )}
+            {syncNote && <div className="note">{syncNote}</div>}
           </div>
 
           <div className="card">

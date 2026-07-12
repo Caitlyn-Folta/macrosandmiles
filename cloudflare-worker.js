@@ -16,7 +16,18 @@
 
    Also set a monthly spend limit in console.anthropic.com → Settings →
    Billing (a few dollars is plenty — each lookup costs ~$0.001, and the
-   app caches results so each unique phrase is only ever looked up once). */
+   app caches results so each unique phrase is only ever looked up once).
+
+   Extra setup for DEVICE SYNC (~2 minutes, also free):
+   5. Cloudflare dashboard → Storage & Databases → KV → Create namespace →
+      name it mm-sync.
+   6. Your Worker → Settings → Bindings → Add → KV namespace →
+      Variable name: MM_SYNC → select the mm-sync namespace → Deploy.
+   7. In the app: plan tab → 🔄 Sync → Turn on. It generates a private
+      sync code; enter the same Worker URL + code on your other device.
+   Your data is stored in YOUR Cloudflare account's KV, keyed by a hash of
+   the sync code — the code never leaves your devices except inside the
+   request that reads/writes your own data. */
 
 const MODEL = "claude-haiku-4-5";
 
@@ -60,8 +71,8 @@ export default {
       /* "*" works everywhere; to lock the Worker to your app, change it to
          your GitHub Pages origin, e.g. "https://caitlyn-folta.github.io" */
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, x-sync-code",
     };
     const json = (obj, status = 200) =>
       new Response(JSON.stringify(obj), {
@@ -70,6 +81,39 @@ export default {
       });
 
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
+
+    /* ---- /sync: device sync backed by Workers KV (binding MM_SYNC) ----
+       GET  /sync  (header x-sync-code) -> { rev, data }
+       PUT  /sync  (header x-sync-code, body { baseRev, data }) -> { rev }
+       409 with the current { rev, data } when baseRev is stale, so the
+       client can merge and retry. The KV key is a SHA-256 of the sync
+       code; the raw code is never stored. */
+    if (new URL(request.url).pathname.endsWith("/sync")) {
+      if (!env.MM_SYNC) return json({ error: "KV binding MM_SYNC is not set up on this Worker (see setup step 5–6 in cloudflare-worker.js)" }, 500);
+      const code = request.headers.get("x-sync-code") || "";
+      if (code.length < 12) return json({ error: "missing or too-short x-sync-code header" }, 401);
+      const hashBuf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(code));
+      const kvKey = "sync:" + [...new Uint8Array(hashBuf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      if (request.method === "GET") {
+        const stored = await env.MM_SYNC.get(kvKey, "json");
+        return json(stored || { rev: 0, data: null });
+      }
+      if (request.method === "PUT") {
+        let body;
+        try { body = await request.json(); } catch { return json({ error: "body must be JSON" }, 400); }
+        if (!body || typeof body.baseRev !== "number" || !body.data) return json({ error: "body must be { baseRev, data }" }, 400);
+        if (JSON.stringify(body.data).length > 20 * 1024 * 1024) return json({ error: "sync payload too large" }, 413);
+        const stored = await env.MM_SYNC.get(kvKey, "json");
+        const currentRev = stored ? stored.rev : 0;
+        if (currentRev !== body.baseRev) return json(stored || { rev: 0, data: null }, 409);
+        const next = { rev: currentRev + 1, data: body.data };
+        await env.MM_SYNC.put(kvKey, JSON.stringify(next));
+        return json({ rev: next.rev });
+      }
+      return json({ error: "GET or PUT only on /sync" }, 405);
+    }
+
     if (request.method !== "POST") return json({ error: "POST a JSON body like {\"text\": \"2 street tacos\"}" }, 405);
 
     let text = "";
