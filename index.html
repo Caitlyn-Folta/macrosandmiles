@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Macros &amp; Miles</title>
+<meta name="theme-color" content="#7A2FF2" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="M&amp;M" />
+<style>body{margin:0;background:#F6EFFF}</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+/* ============ IndexedDB storage shim ============
+   Same API shape as the Claude artifact's window.storage,
+   so the component code below is unchanged where it calls it.
+   IndexedDB has no meaningful size cap, which matters for photos. */
+(function () {
+  let dbp = null;
+  function open() {
+    if (dbp) return dbp;
+    dbp = new Promise((res, rej) => {
+      const r = indexedDB.open("macros-miles", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("kv");
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    return dbp;
+  }
+  async function tx(mode, fn) {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const t = db.transaction("kv", mode);
+      const req = fn(t.objectStore("kv"));
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+  }
+  window.storage = {
+    async get(key) {
+      const v = await tx("readonly", (s) => s.get(key));
+      return v === undefined ? null : { key, value: v };
+    },
+    async set(key, value) {
+      await tx("readwrite", (s) => s.put(value, key));
+      return { key, value };
+    },
+    async delete(key) {
+      await tx("readwrite", (s) => s.delete(key));
+      return { key, deleted: true };
+    },
+    async list(prefix) {
+      const keys = await tx("readonly", (s) => s.getAllKeys());
+      return { keys: prefix ? keys.filter((k) => String(k).startsWith(prefix)) : keys };
+    },
+  };
+})();
+
+/* Ask the browser to protect IndexedDB from eviction (best effort) */
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
+}
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+const { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ReferenceLine, CartesianGrid, Legend } = Recharts;
+
+/* ---------- MACROS & MILES (standalone PWA build) ----------
+   Ported from the Claude artifact. Changes from the artifact:
+   - window.storage now backed by IndexedDB (shim above)
+   - AI estimate replaced by 3-tier lookup: local table -> cache -> USDA
+   Palette: porcelain #F6EFFF / ink #2B1B3D / cobalt #7A2FF2 / ember #FF3E8A / mint #00B3A4 / amber #F0A500
+------------------------------------------------------------- */
+
+/* >>> PASTE YOUR FREE KEY BETWEEN THE QUOTES.
+   Get one at https://fdc.nal.usda.gov/api-key-signup.html
+   Leave empty to run fully offline (local table + cache only). */
+const USDA_KEY = "";
+
+const USDA_SEARCH = "https://api.nal.usda.gov/fdc/v1/foods/search";
+const USDA_DETAIL = "https://api.nal.usda.gov/fdc/v1/food/";
+const CACHE_KEY = "mm:foodcache:v1";
+
+const K = {
+  settings: "sh:settings",
+  presets: "sh:presets",
+  history: "sh:history",
+  weight: "sh:weight",
+  photoIndex: "sh:photoIndex",
+  profile: "sh:profile",
+  day: (d) => "sh:day:" + d,
+  photo: (d) => "sh:photo:" + d,
+};
+
+const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
+const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
+const levelFromXp = (xp) => { let l = 1; while (xp >= xpForLevel(l + 1)) l++; return l; };
+
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const shiftDate = (dateStr, delta) => {
+  const [y, m, dd] = dateStr.split("-").map(Number);
+  const d = new Date(y, m - 1, dd + delta);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const shortDate = (ds) => { const [, m, d] = ds.split("-"); return `${Number(m)}/${Number(d)}`; };
+const dow = (ds) => { const [y, m, d] = ds.split("-").map(Number); return new Date(y, m - 1, d).getDay(); };
+const isPoolDay = (ds) => { const w = dow(ds); return w === 5 || w === 6 || w === 0; };
+const weekMonday = (ds) => { const w = dow(ds); return shiftDate(ds, w === 0 ? -6 : 1 - w); };
+
+const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return Math.abs(h); };
+const totalCal = (day) => day.entries.reduce((a, e) => a + e.cal, 0);
+const totalProt = (day) => day.entries.reduce((a, e) => a + (e.p || 0), 0);
+const totalFib = (day) => day.entries.reduce((a, e) => a + (e.f || 0), 0);
+const emptyDay = (date) => ({ date, entries: [], steps: 0, closed: false, mq: {}, xp: 0 });
+
+const sget = async (k) => { try { const r = await window.storage.get(k); return r ? JSON.parse(r.value) : null; } catch { return null; } };
+const sset = async (k, v) => { try { await window.storage.set(k, JSON.stringify(v)); return true; } catch (e) { console.error("storage", e); return false; } };
+
+/* ---------- weekly banking math ---------- */
+const calFor = (ds, history, liveDate, liveCal) => (ds === liveDate ? liveCal : history[ds]?.c ?? null);
+
+const bankEarned = (anyDateInWeek, history, settings, liveDate, liveCal) => {
+  const mon = weekMonday(anyDateInWeek);
+  let bank = 0;
+  for (let i = 0; i < 4; i++) {
+    const ds = shiftDate(mon, i);
+    const c = calFor(ds, history, liveDate, liveCal);
+    if (c !== null && c > 0) bank += Math.max(0, settings.calTarget - c);
+  }
+  return bank;
+};
+
+const poolSpentThrough = (ds, history, liveDate, liveCal) => {
+  const mon = weekMonday(ds);
+  let spent = 0;
+  for (let i = 4; i < 7; i++) {
+    const d2 = shiftDate(mon, i);
+    if (d2 > ds) break;
+    const c = calFor(d2, history, liveDate, liveCal);
+    if (c) spent += c;
+  }
+  return spent;
+};
+
+const onPlanCal = (ds, history, settings, liveDate, liveCal) => {
+  const c = calFor(ds, history, liveDate, liveCal);
+  if (c === null || c === 0) return false;
+  if (!isPoolDay(ds)) return c <= settings.calTarget;
+  const pool = 3 * settings.calTarget + bankEarned(ds, history, settings, liveDate, liveCal);
+  return poolSpentThrough(ds, history, liveDate, liveCal) <= pool;
+};
+
+const dayScore = (ds, history, settings, liveDate, live) => {
+  const rec = ds === liveDate ? { c: totalCal(live), s: live.steps, e: live.entries.length } : history[ds];
+  if (!rec) return history[ds]?.shield ? 100 : 0;
+  if (rec.shield) return 100;
+  let score = 0;
+  if (rec.e > 0) score += 30;
+  if (onPlanCal(ds, history, settings, liveDate, ds === liveDate ? totalCal(live) : rec.c)) score += 40;
+  score += Math.min(30, Math.round((rec.s / settings.stepGoal) * 30));
+  return score;
+};
+
+/* ---------- quests ---------- */
+const windowsFilled = (day) => ({
+  morning: day.entries.some((e) => e.hour < 10),
+  midday: day.entries.some((e) => e.hour >= 10 && e.hour < 15),
+  evening: day.entries.some((e) => e.hour >= 15 && e.hour < 21),
+});
+
+const WEEKDAY_QUESTS = [
+  { id: "rope_drop", label: "Rope Drop", desc: "Log something before 10am", test: (c) => windowsFilled(c.day).morning },
+  { id: "prosecution", label: "The Prosecution Rests", desc: "Everything logged before 9pm, day closed", test: (c) => c.day.closed && c.day.entries.length > 0 && c.day.entries.every((e) => e.hour < 21) },
+  { id: "split_check", label: "Split the Check", desc: "No single item over 40% of budget", test: (c) => c.day.entries.length > 0 && c.day.entries.every((e) => e.cal <= 0.4 * c.settings.calTarget) },
+  { id: "negative_space", label: "Negative Space", desc: "Leave a 200+ calorie buffer", test: (c) => c.day.entries.length > 0 && c.settings.calTarget - totalCal(c.day) >= 200 },
+  { id: "rule_of_three", label: "Rule of Three", desc: "Log at least 3 items", test: (c) => c.day.entries.length >= 3 },
+  { id: "full_coverage", label: "Full Coverage", desc: "Fill all 3 meal windows", test: (c) => { const w = windowsFilled(c.day); return w.morning && w.midday && w.evening; } },
+];
+const WEEKEND_QUESTS = [
+  { id: "no_blt", label: "No BLTs", desc: "Zero bites, licks, and tastes off other plates", manual: true },
+  { id: "skip_chips", label: "Skip the Chips", desc: "Decline the freebie carbs you didn't order", manual: true },
+  { id: "moderation", label: "Moderation Warrior", desc: "Weekend pool still on plan", test: (c) => c.onPlanNow },
+  { id: "recon", label: "Date Night Recon", desc: "Order picked from the menu before you arrive", manual: true },
+  { id: "pours", label: "Count the Pours", desc: "Every drink logged when it lands, not Sunday morning", manual: true },
+  { id: "walk_off", label: "Walk It Off", desc: "Step goal + 2,000 (post-dinner stroll counts)", test: (c) => c.day.steps >= c.settings.stepGoal + 2000 },
+];
+const SHARED_QUESTS = [
+  { id: "step_goal", label: "Boots on the Ground", desc: "Hit your step goal", test: (c) => c.day.steps >= c.settings.stepGoal },
+  { id: "overachiever", label: "Overachiever", desc: "Beat your step goal by 20%", test: (c) => c.day.steps >= Math.round(c.settings.stepGoal * 1.2) },
+  { id: "weigh_in", label: "Face the Music", desc: "Step on the scale and log it", test: (c) => c.weights.some((w) => w.d === c.day.date) },
+  { id: "muscle", label: "Muscle Memory", desc: "💪 Hit your protein goal", test: (c) => totalProt(c.day) >= c.settings.proteinGoal },
+  { id: "roughage", label: "The Roughage Report", desc: "🥦 Hit your fiber goal", test: (c) => totalFib(c.day) >= c.settings.fiberGoal },
+  { id: "macro_sweep", label: "Macro Sweep", desc: "Protein and fiber goals, same day", test: (c) => totalProt(c.day) >= c.settings.proteinGoal && totalFib(c.day) >= c.settings.fiberGoal },
+];
+
+const questsForDate = (dateStr) => {
+  const pool = (isPoolDay(dateStr) ? [...WEEKEND_QUESTS, ...SHARED_QUESTS] : [...WEEKDAY_QUESTS, ...SHARED_QUESTS]);
+  const idx = [...pool.keys()];
+  let seed = hashStr(dateStr);
+  for (let i = idx.length - 1; i > 0; i--) {
+    seed = (seed * 9301 + 49297) % 233280;
+    const j = seed % (i + 1);
+    [idx[i], idx[j]] = [idx[j], idx[i]];
+  }
+  return idx.slice(0, 3).map((i) => pool[i]);
+};
+
+/* ---------- humor systems ---------- */
+const PEP_TALKS = [
+  "You've survived 100% of your worst days. The scale can take a number.",
+  "Discipline is just spite with a to-do list. You have both.",
+  "Objection: snacks. Sustained: you already logged dinner.",
+  "Today's forecast: 12,000 steps with a chance of smugness.",
+  "The tacos will still exist Saturday. That's literally what the pool is for.",
+  "Willpower is a myth. Systems are real. You built one. Use it.",
+  "Be the person your step counter believes you can be.",
+  "Your future self called. She said thanks in advance.",
+  "Protein first, chaos second. That's the whole strategy.",
+  "One logged meal beats three remembered ones. Exhibit A: science.",
+  "You don't need motivation. You need thirty seconds and thumbs.",
+  "Nobody has ever regretted the walk. Discovery closed on that years ago.",
+  "The chain doesn't need perfect. It needs present.",
+  "Bank it Monday, spend it Saturday. Financial advice, calories only.",
+  "Snack cross-examination: hungry, or just standing near a pantry?",
+  "Progress is boring daily and shocking monthly. Stay boring.",
+  "You vs. yesterday's you. She was pretty good. Beat her anyway.",
+  "Fiber: because your gut deserves competent counsel too.",
+  "Kitchen closes when the day closes. Court is adjourned.",
+  "Weekends are for living. The math already signed off.",
+  "Log it now, or reconstruct it at 9pm from vibes. Your call, counselor.",
+  "Every great streak started on one unremarkable Tuesday.",
+  "Hydrate. Litigate. Ambulate.",
+  "The record shows you keep showing up. Keep the record clean.",
+];
+const FOOD_PLACEHOLDERS = [
+  "2 street tacos + a modelo",
+  "handful of the kids' goldfish (be honest)",
+  "coffee that's legally mostly creamer",
+  "salad, but make it caesar",
+  "the crusts of somebody's PB&J",
+  "3 bites of mac that 'don't count' (they count)",
+  "grilled chicken + whatever was in the fridge",
+];
+const EMPTY_LOG_LINES = [
+  "Nothing logged. The record reflects silence.",
+  "Zero entries. Suspiciously quiet in here.",
+  "Empty docket. The tacos plead the fifth.",
+  "No entries yet. The court will allow a snack.",
+];
+const scoreQuip = (s) =>
+  s >= 90 ? "Flawless. The prosecution rests." :
+  s >= 70 ? "Strong showing. The jury is visibly impressed." :
+  s >= 40 ? "Split decision. Tomorrow files the appeal." :
+  "Rough session. But you showed up to log it, and that's the win on record.";
+
+const evidenceLine = (ctx) => {
+  const lines = [];
+  if (ctx.comeback) lines.push("You came back. Statistically, that's the whole game.");
+  if (ctx.onPlan14 >= 8) lines.push(`On plan ${ctx.onPlan14} of the last 14 days. That's a pattern, not a fluke.`);
+  if (ctx.streak >= 3) lines.push(`${ctx.streak} days running. The chain is doing its job.`);
+  if (ctx.weekSteps >= ctx.stepGoal * 4) lines.push(`${ctx.weekSteps.toLocaleString()} steps this week. The evidence speaks for itself.`);
+  if (ctx.protein7 >= 4) lines.push(`Protein goal hit ${ctx.protein7} of the last 7 days. The muscles have receipts.`);
+  if (ctx.weightDelta !== null && ctx.weightDelta <= -1) lines.push(`Down ${Math.abs(ctx.weightDelta).toFixed(1)} since day one. Math doesn't flatter.`);
+  if (ctx.bestStreak > ctx.streak && ctx.streak > 0) lines.push(`Best streak: ${ctx.bestStreak}. Current: ${ctx.streak}. The gap is just a to-do item.`);
+  if (lines.length === 0) lines.push("Day logged and closed. Every dataset starts with one row.");
+  return lines[hashStr(ctx.date) % lines.length];
+};
+
+/* ================================================================
+   FOOD LOOKUP — Tier 1 local table, Tier 2 cache, Tier 3 USDA
+   ================================================================ */
+
+/* per-serving values; g = grams/serving, ml = milliliters/serving */
+const FOOD_DB = [
+  { k: ["street taco"], c: 150, p: 8, f: 1, g: 80 },
+  { k: ["taco"], c: 170, p: 9, f: 2, g: 100 },
+  { k: ["burrito"], c: 580, p: 25, f: 8, g: 350 },
+  { k: ["quesadilla"], c: 500, p: 22, f: 3, g: 220 },
+  { k: ["modelo", "beer"], c: 145, p: 1, f: 0, ml: 355, liquid: true },
+  { k: ["light beer", "michelob"], c: 100, p: 1, f: 0, ml: 355, liquid: true },
+  { k: ["wine"], c: 125, p: 0, f: 0, ml: 150, liquid: true },
+  { k: ["margarita"], c: 250, p: 0, f: 0, ml: 240, liquid: true },
+  { k: ["cocktail", "old fashioned", "martini"], c: 200, p: 0, f: 0, ml: 120, liquid: true },
+  { k: ["seltzer", "white claw"], c: 100, p: 0, f: 0, ml: 355, liquid: true },
+  { k: ["shot", "tequila"], c: 100, p: 0, f: 0, ml: 44, liquid: true },
+  { k: ["soda", "coke"], c: 140, p: 0, f: 0, ml: 355, liquid: true },
+  { k: ["egg"], c: 75, p: 6, f: 0, g: 50 },
+  { k: ["chicken breast", "grilled chicken"], c: 280, p: 52, f: 0, g: 170 },
+  { k: ["rotisserie chicken"], c: 300, p: 40, f: 0, g: 180 },
+  { k: ["salmon"], c: 350, p: 40, f: 0, g: 170 },
+  { k: ["steak"], c: 420, p: 46, f: 0, g: 200 },
+  { k: ["shrimp"], c: 170, p: 34, f: 0, g: 140 },
+  { k: ["ground turkey"], c: 250, p: 35, f: 0, g: 150 },
+  { k: ["ground beef"], c: 340, p: 30, f: 0, g: 150 },
+  { k: ["rice"], c: 200, p: 4, f: 1, g: 160 },
+  { k: ["quinoa"], c: 220, p: 8, f: 5, g: 185 },
+  { k: ["tortilla"], c: 90, p: 2, f: 1, g: 30 },
+  { k: ["avocado"], c: 240, p: 3, f: 10, g: 150 },
+  { k: ["guacamole", "guac"], c: 90, p: 1, f: 4, g: 60 },
+  { k: ["chips and salsa", "chips"], c: 140, p: 2, f: 1, g: 28 },
+  { k: ["caesar salad"], c: 350, p: 10, f: 3, g: 250 },
+  { k: ["salad"], c: 150, p: 5, f: 4, g: 200 },
+  { k: ["cheeseburger"], c: 600, p: 32, f: 2, g: 250 },
+  { k: ["burger"], c: 550, p: 30, f: 2, g: 230 },
+  { k: ["fries", "french fries"], c: 380, p: 5, f: 4, g: 140 },
+  { k: ["pizza"], c: 285, p: 12, f: 2, g: 110 },
+  { k: ["oatmeal", "oats"], c: 160, p: 6, f: 4, g: 240 },
+  { k: ["greek yogurt", "yogurt"], c: 100, p: 17, f: 0, g: 170 },
+  { k: ["protein shake"], c: 160, p: 30, f: 1, ml: 350, liquid: true },
+  { k: ["protein bar"], c: 200, p: 20, f: 5, g: 60 },
+  { k: ["banana"], c: 105, p: 1, f: 3, g: 118 },
+  { k: ["apple"], c: 95, p: 0, f: 4, g: 180 },
+  { k: ["berries", "strawberries", "blueberries"], c: 70, p: 1, f: 4, g: 140 },
+  { k: ["latte"], c: 120, p: 8, f: 0, ml: 355, liquid: true },
+  { k: ["black coffee", "americano"], c: 5, p: 0, f: 0, ml: 300, liquid: true },
+  { k: ["turkey sandwich"], c: 350, p: 25, f: 4, g: 220 },
+  { k: ["sandwich"], c: 400, p: 20, f: 3, g: 230 },
+  { k: ["pasta", "spaghetti"], c: 400, p: 14, f: 3, g: 250 },
+  { k: ["sushi roll", "sushi"], c: 300, p: 9, f: 2, g: 190 },
+  { k: ["poke"], c: 550, p: 35, f: 6, g: 400 },
+  { k: ["broccoli"], c: 55, p: 4, f: 5, g: 150 },
+  { k: ["beans", "black beans"], c: 110, p: 7, f: 7, g: 130 },
+  { k: ["cottage cheese"], c: 110, p: 12, f: 0, g: 110 },
+  { k: ["string cheese"], c: 80, p: 7, f: 0, g: 28 },
+  { k: ["almonds", "nuts"], c: 165, p: 6, f: 3, g: 28 },
+  { k: ["peanut butter"], c: 95, p: 4, f: 1, g: 16 },
+  { k: ["toast"], c: 80, p: 3, f: 1, g: 28 },
+  { k: ["bagel"], c: 290, p: 11, f: 2, g: 100 },
+  { k: ["cream cheese"], c: 100, p: 2, f: 0, g: 28 },
+  { k: ["pancake"], c: 90, p: 2, f: 0, g: 40 },
+  { k: ["ice cream"], c: 140, p: 2, f: 0, g: 66 },
+  { k: ["cookie"], c: 160, p: 2, f: 1, g: 32 },
+  { k: ["chocolate"], c: 150, p: 2, f: 1, g: 28 },
+  { k: ["hummus"], c: 70, p: 2, f: 2, g: 30 },
+  { k: ["edamame"], c: 190, p: 17, f: 8, g: 155 },
+  { k: ["tuna"], c: 120, p: 26, f: 0, g: 110 },
+];
+
+const WORD_NUM = {
+  a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
+  seven: 7, eight: 8, nine: 9, ten: 10, dozen: 12,
+  half: 0.5, quarter: 0.25, couple: 2, few: 3, several: 3,
+  double: 2, triple: 3, single: 1,
+};
+const WEIGHT_UNITS = {
+  g: 1, gram: 1, grams: 1, gr: 1,
+  oz: 28.35, ounce: 28.35, ounces: 28.35,
+  lb: 453.6, lbs: 453.6, pound: 453.6, pounds: 453.6,
+  kg: 1000, kilo: 1000, kilos: 1000,
+};
+const VOLUME_UNITS = {
+  ml: 1, milliliter: 1, milliliters: 1,
+  l: 1000, liter: 1000, liters: 1000, litre: 1000,
+  cup: 240, cups: 240,
+  tbsp: 15, tablespoon: 15, tablespoons: 15,
+  tsp: 5, teaspoon: 5, teaspoons: 5,
+  "fl oz": 29.57, floz: 29.57, "fluid ounce": 29.57, "fluid ounces": 29.57,
+  pint: 473, pints: 473, quart: 946,
+  shot: 44, shots: 44,
+  can: 355, cans: 355, bottle: 355, bottles: 355,
+  glass: 200, glasses: 200,
+  splash: 15, drizzle: 5, swig: 30, sip: 15,
+};
+const COLLOQUIAL_UNITS = {
+  handful: 30, handfuls: 30,
+  bite: 15, bites: 15, nibble: 10,
+  forkful: 20, forkfuls: 20,
+  spoonful: 15, spoonfuls: 15,
+  scoop: 60, scoops: 60,
+  pat: 5, dollop: 30, chunk: 40, sliver: 15,
+};
+const COUNT_UNITS = new Set([
+  "slice", "slices", "piece", "pieces", "strip", "strips",
+  "patty", "patties", "wing", "wings", "link", "links",
+  "stick", "sticks", "square", "squares", "serving", "servings", "order",
+]);
+
+const normalizeFood = (s) =>
+  s.toLowerCase()
+    .replace(/½/g, "1/2").replace(/¼/g, "1/4").replace(/¾/g, "3/4").replace(/⅓/g, "1/3")
+    .replace(/\s+/g, " ").trim();
+
+function takeNumber(s) {
+  let m = s.match(/^(\d+)\s+(\d+)\s*\/\s*(\d+)\b\s*(.*)$/);
+  if (m) return { qty: Number(m[1]) + Number(m[2]) / Number(m[3]), rest: m[4] };
+  m = s.match(/^(\d+)\s*\/\s*(\d+)\b\s*(.*)$/);
+  if (m) return { qty: Number(m[1]) / Number(m[2]), rest: m[3] };
+  m = s.match(/^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)\b\s*(.*)$/);
+  if (m) return { qty: (Number(m[1]) + Number(m[2])) / 2, rest: m[3] };
+  m = s.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+  if (m) return { qty: Number(m[1]), rest: m[2] };
+  m = s.match(/^([a-z]+)\s+(.*)$/);
+  if (m && WORD_NUM[m[1]] != null) {
+    let rest = m[2];
+    const and = rest.match(/^and\s+(?:a\s+)?half\s+(.*)$/);
+    if (and) return { qty: WORD_NUM[m[1]] + 0.5, rest: and[1] };
+    return { qty: WORD_NUM[m[1]], rest };
+  }
+  return null;
+}
+
+function takeUnit(s) {
+  const two = s.match(/^([a-z]+\s[a-z]+)\.?\b\s*(.*)$/);
+  if (two && VOLUME_UNITS[two[1]] != null)
+    return { type: "volume", ml: VOLUME_UNITS[two[1]], rest: two[2] };
+  const one = s.match(/^([a-z]+)\.?\b\s*(.*)$/);
+  if (!one) return null;
+  const u = one[1], rest = one[2];
+  if (WEIGHT_UNITS[u] != null) return { type: "weight", grams: WEIGHT_UNITS[u], rest };
+  if (VOLUME_UNITS[u] != null) return { type: "volume", ml: VOLUME_UNITS[u], rest };
+  if (COLLOQUIAL_UNITS[u] != null) return { type: "weight", grams: COLLOQUIAL_UNITS[u], rough: true, rest };
+  if (COUNT_UNITS.has(u)) return { type: "count", countNoun: u, rest };
+  return null;
+}
+
+function parseSegment(raw) {
+  let s = normalizeFood(raw);
+  if (!s) return null;
+  let qty = null, unit = null;
+
+  const num = takeNumber(s);
+  if (num) { qty = num.qty; s = num.rest; }
+
+  const u = takeUnit(s);
+  if (u) { unit = u; s = u.rest; }
+  s = s.replace(/^of\s+/, "");
+
+  if (qty === null) {
+    const trail = s.match(/^(.*?)[\s,]+(\d+(?:\.\d+)?)\s*([a-z]+)\.?\s*$/);
+    if (trail) {
+      const tu = takeUnit(trail[3] + " ");
+      if (tu) { qty = Number(trail[2]); unit = tu; s = trail[1]; }
+    }
+  }
+
+  const name = s.trim();
+  if (!name && !unit) return null;
+  return {
+    qty: qty !== null ? qty : 1,
+    unit: unit ? { type: unit.type, grams: unit.grams, ml: unit.ml, rough: !!unit.rough, countNoun: unit.countNoun } : { type: "count" },
+    name: name || raw.trim(),
+    raw: raw.trim(),
+  };
+}
+
+const splitSegments = (desc) =>
+  desc.split(/\+|,|&|\band\b|\bwith\b|\bw\/\b|\bplus\b/i).map((x) => x.trim()).filter(Boolean);
+
+function scaleFactor(parsed, entry) {
+  const { qty, unit } = parsed;
+  if (unit.type === "count") return { factor: qty, rough: false };
+  if (unit.type === "weight" && entry.liquid && entry.ml)
+    return { factor: (qty * unit.grams) / entry.ml, rough: unit.rough }; /* grams ≈ ml for drinks */
+  if (unit.type === "weight") {
+    if (entry.g) return { factor: (qty * unit.grams) / entry.g, rough: unit.rough };
+    return { factor: (qty * unit.grams) / 150, rough: true };
+  }
+  if (entry.ml) return { factor: (qty * unit.ml) / entry.ml, rough: false };
+  if (entry.g) return { factor: (qty * unit.ml * 0.85) / entry.g, rough: true };
+  return { factor: qty, rough: true };
+}
+
+const applyFactor = (entry, name, factor, rough) => ({
+  name,
+  cal: Math.round(entry.c * factor),
+  p: Math.round((entry.p || 0) * factor),
+  f: Math.round((entry.f || 0) * factor),
+  rough,
+});
+
+function localMatch(name) {
+  let best = null;
+  for (const item of FOOD_DB)
+    for (const kk of item.k)
+      if (name.includes(kk) && (!best || kk.length > best.kl)) best = { entry: item, kl: kk.length, key: kk };
+  return best;
+}
+
+function cacheGet(name) {
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
+    return c[name] || null;
+  } catch { return null; }
+}
+function cachePut(name, entry) {
+  try {
+    const c = JSON.parse(localStorage.getItem(CACHE_KEY) || "{}");
+    c[name] = entry;
+    localStorage.setItem(CACHE_KEY, JSON.stringify(c));
+  } catch {}
+}
+
+const NUTRIENT_IDS = { cal: [1008, 2047, 2048], p: [1003], f: [1079] };
+
+function extractNutrients(foodNutrients) {
+  const grab = (ids) => {
+    for (const id of ids) {
+      const n = foodNutrients.find((x) => (x.nutrientId != null ? x.nutrientId : x.nutrient && x.nutrient.id) === id);
+      if (n) {
+        const v = n.value != null ? n.value : n.amount;
+        if (typeof v === "number") return v;
+      }
+    }
+    return 0;
+  };
+  return { cal: grab(NUTRIENT_IDS.cal), p: grab(NUTRIENT_IDS.p), f: grab(NUTRIENT_IDS.f) };
+}
+
+async function usdaSearch(name) {
+  const url = `${USDA_SEARCH}?api_key=${USDA_KEY}&query=${encodeURIComponent(name)}` +
+    `&dataType=${encodeURIComponent("Survey (FNDDS)")},${encodeURIComponent("SR Legacy")},Branded&pageSize=5`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`USDA HTTP ${res.status}`);
+  const data = await res.json();
+  return data.foods || [];
+}
+
+async function usdaPortions(fdcId) {
+  try {
+    const res = await fetch(`${USDA_DETAIL}${fdcId}?api_key=${USDA_KEY}`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.foodPortions || [];
+  } catch { return []; }
+}
+
+function portionGrams(portions, parsed) {
+  if (!portions.length) return null;
+  const want = parsed.unit.countNoun || parsed.name.split(/\s+/).pop();
+  const text = (p) => `${p.portionDescription || ""} ${p.modifier || ""} ${(p.measureUnit && p.measureUnit.name) || ""}`.toLowerCase();
+  if (parsed.unit.type === "volume") {
+    const volName = parsed.unit.ml >= 240 ? "cup" : parsed.unit.ml >= 15 ? "tablespoon" : "teaspoon";
+    const hit = portions.find((p) => text(p).includes(volName));
+    if (hit && hit.gramWeight) return hit.gramWeight * (parsed.unit.ml / (volName === "cup" ? 240 : volName === "tablespoon" ? 15 : 5));
+  }
+  const hit =
+    portions.find((p) => want && text(p).includes(want.replace(/s$/, ""))) ||
+    portions.find((p) => /each|1 (item|unit|piece)|small|medium/.test(text(p)));
+  if (hit && hit.gramWeight) return hit.gramWeight;
+  const sorted = portions.filter((p) => p.gramWeight).sort((a, b) => a.gramWeight - b.gramWeight);
+  return sorted.length ? sorted[Math.floor(sorted.length / 2)].gramWeight : null;
+}
+
+async function usdaResolve(parsed) {
+  const foods = await usdaSearch(parsed.name);
+  if (!foods.length) return { status: "none" };
+
+  const build = async (food, needPortion) => {
+    const per100 = extractNutrients(food.foodNutrients || []);
+    let grams;
+    let rough = false;
+
+    if (parsed.unit.type === "weight") {
+      grams = parsed.qty * parsed.unit.grams;
+      rough = parsed.unit.rough;
+    } else {
+      let pg = null;
+      if (food.servingSize && /g/i.test(food.servingSizeUnit || "")) pg = food.servingSize;
+      if (!pg && needPortion) pg = portionGrams(await usdaPortions(food.fdcId), parsed);
+      if (!pg) { pg = parsed.unit.type === "volume" ? parsed.unit.ml * 0.85 : 100; rough = true; }
+      grams = pg * parsed.qty;
+    }
+
+    const factor = grams / 100;
+    const perServing = grams / Math.max(parsed.qty, 0.001);
+    cachePut(parsed.name, {
+      c: Math.round(per100.cal * (perServing / 100)),
+      p: Math.round(per100.p * (perServing / 100)),
+      f: Math.round(per100.f * (perServing / 100)),
+      g: Math.round(perServing),
+    });
+    return {
+      name: `${parsed.qty !== 1 ? parsed.qty + "× " : ""}${(food.description || parsed.name).toLowerCase().slice(0, 50)}`,
+      cal: Math.round(per100.cal * factor),
+      p: Math.round(per100.p * factor),
+      f: Math.round(per100.f * factor),
+      rough,
+    };
+  };
+
+  const top = foods[0];
+  const second = foods[1];
+  const dominant = !second || (top.score && second.score && top.score > second.score * 1.6);
+
+  if (dominant) return { status: "resolved", entry: await build(top, true) };
+  const candidates = [];
+  for (const fd of foods.slice(0, 3)) candidates.push(await build(fd, fd === top));
+  return { status: "candidates", candidates };
+}
+
+async function lookupFood(desc) {
+  const results = [];
+  for (const seg of splitSegments(desc)) {
+    const parsed = parseSegment(seg);
+    if (!parsed) continue;
+
+    const local = localMatch(parsed.name);
+    if (local) {
+      const sf = scaleFactor(parsed, local.entry);
+      const label = parsed.qty !== 1 || parsed.unit.type !== "count" ? parsed.raw.slice(0, 50) : local.key;
+      results.push({ status: "resolved", source: "local", parsed, entry: applyFactor(local.entry, label, sf.factor, sf.rough) });
+      continue;
+    }
+
+    const cached = cacheGet(parsed.name);
+    if (cached) {
+      const sf = scaleFactor(parsed, cached);
+      results.push({ status: "resolved", source: "cache", parsed, entry: applyFactor(cached, parsed.raw.slice(0, 50), sf.factor, sf.rough) });
+      continue;
+    }
+
+    if (!USDA_KEY) { results.push({ status: "none", source: "nokey", parsed }); continue; }
+    try {
+      const r = await usdaResolve(parsed);
+      results.push(Object.assign({ source: "usda", parsed }, r));
+    } catch (e) {
+      results.push({ status: "none", source: "error", parsed, error: e.message });
+    }
+  }
+  return { segments: results };
+}
+
+/* ---------- image compression ---------- */
+const compressImage = (file, maxDim = 900, quality = 0.72) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+/* ================================================================ */
+function Streakhouse() {
+  const [tab, setTab] = useState("today");
+  const [settings, setSettings] = useState({ calTarget: 1800, stepGoal: 12000, proteinGoal: 120, fiberGoal: 30 });
+  const [presets, setPresets] = useState([]);
+  const [history, setHistory] = useState({});
+  const [weights, setWeights] = useState([]);
+  const [photoIndex, setPhotoIndex] = useState([]);
+  const [photos, setPhotos] = useState({});
+  const [profile, setProfile] = useState({ xp: 0, tokens: 0, perfect: 0, bestStreak: 0, lastRecon: null });
+  const [day, setDay] = useState(emptyDay(todayStr()));
+  const [loaded, setLoaded] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [managePresets, setManagePresets] = useState(false);
+  const [viewPhoto, setViewPhoto] = useState(null);
+  const [closeFlow, setCloseFlow] = useState(null);
+  const [toast, setToast] = useState("");
+
+  const [desc, setDesc] = useState("");
+  const [calInput, setCalInput] = useState("");
+  const [protInput, setProtInput] = useState("");
+  const [fibInput, setFibInput] = useState("");
+  const [estimating, setEstimating] = useState(false);
+  const [estimateNote, setEstimateNote] = useState("");
+  const [stepInput, setStepInput] = useState("");
+  const [weightInput, setWeightInput] = useState("");
+  const [calDraft, setCalDraft] = useState("");
+  const [stepDraft, setStepDraft] = useState("");
+  const [protDraft, setProtDraft] = useState("");
+  const [fibDraft, setFibDraft] = useState("");
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoNote, setPhotoNote] = useState("");
+  const fileRef = useRef(null);
+  const foodInputRef = useRef(null);
+
+  /* ---------- load + shield reconciliation ---------- */
+  useEffect(() => {
+    (async () => {
+      const t = todayStr();
+      const [s, p, h, w, pi, pr, d] = await Promise.all([
+        sget(K.settings), sget(K.presets), sget(K.history), sget(K.weight), sget(K.photoIndex), sget(K.profile), sget(K.day(t)),
+      ]);
+      const st = Object.assign({ calTarget: 1800, stepGoal: 12000, proteinGoal: 120, fiberGoal: 30 }, s || {});
+      let hist = h || {};
+      let prof = pr || { xp: 0, tokens: 0, perfect: 0, bestStreak: 0, lastRecon: shiftDate(t, -1) };
+      if (!prof.lastRecon) prof.lastRecon = shiftDate(t, -1);
+
+      let cursor = shiftDate(prof.lastRecon, 1);
+      const yesterday = shiftDate(t, -1);
+      let changed = false;
+      while (cursor <= yesterday) {
+        const rec = hist[cursor];
+        const qualifies = rec && !rec.shield && rec.c > 0 && rec.s >= st.stepGoal && onPlanCal(cursor, hist, st, null, null);
+        if (!qualifies && !(rec && rec.shield) && prof.tokens > 0) {
+          hist = Object.assign({}, hist);
+          hist[cursor] = Object.assign({}, rec || { c: 0, s: 0, e: 0 }, { shield: true });
+          prof = Object.assign({}, prof, { tokens: prof.tokens - 1 });
+          changed = true;
+        }
+        cursor = shiftDate(cursor, 1);
+      }
+      prof = Object.assign({}, prof, { lastRecon: yesterday });
+      if (changed) await sset(K.history, hist);
+      await sset(K.profile, prof);
+
+      setSettings(st);
+      if (p) setPresets(p);
+      setHistory(hist);
+      if (w) setWeights(w);
+      if (pi) setPhotoIndex(pi);
+      setProfile(prof);
+      setDay(d && d.date === t ? d : emptyDay(t));
+      setLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (tab !== "photos") return;
+    (async () => {
+      for (const ds of photoIndex) {
+        if (!photos[ds]) {
+          const p = await sget(K.photo(ds));
+          if (p) setPhotos((prev) => Object.assign({}, prev, { [ds]: p }));
+        }
+      }
+    })();
+  }, [tab, photoIndex]);
+
+  const commitDay = useCallback(async (nextDay) => {
+    setDay(nextDay);
+    await sset(K.day(nextDay.date), nextDay);
+    setHistory((prev) => {
+      const next = Object.assign({}, prev);
+      next[nextDay.date] = Object.assign({}, prev[nextDay.date] || {}, { c: totalCal(nextDay), s: nextDay.steps, e: nextDay.entries.length, p: totalProt(nextDay), f: totalFib(nextDay) });
+      sset(K.history, next);
+      return next;
+    });
+  }, []);
+
+  const commitProfile = useCallback(async (next) => { setProfile(next); await sset(K.profile, next); }, []);
+
+  const flash = (msg) => { setToast(msg); setTimeout(() => setToast(""), 2600); };
+
+  /* ---------- derived ---------- */
+  const total = totalCal(day);
+  const totP = totalProt(day);
+  const totF = totalFib(day);
+  const today = day.date;
+  const poolDay = isPoolDay(today);
+  const bank = bankEarned(today, history, settings, today, total);
+  const pool = 3 * settings.calTarget + bankEarned(today, history, settings, poolDay ? today : null, poolDay ? total : null);
+  const poolSpent = poolDay ? poolSpentThrough(today, history, today, total) : 0;
+  const remaining = poolDay ? pool - poolSpent : settings.calTarget - total;
+  const budgetShown = poolDay ? pool - (poolSpent - total) : settings.calTarget;
+  const weekendDaysLeft = poolDay ? (dow(today) === 5 ? 3 : dow(today) === 6 ? 2 : 1) : 0;
+  const suggestedToday = poolDay ? Math.max(0, Math.round((pool - (poolSpent - total)) / weekendDaysLeft)) : 0;
+  const onPlanNow = onPlanCal(today, history, settings, today, total);
+  const todayQualifies = day.entries.length > 0 && onPlanNow && day.steps >= settings.stepGoal;
+
+  const dayQual = useCallback((ds) => {
+    const rec = history[ds];
+    if (rec && rec.shield) return true;
+    return !!rec && rec.c > 0 && rec.s >= settings.stepGoal && onPlanCal(ds, history, settings, null, null);
+  }, [history, settings]);
+
+  const streak = useMemo(() => {
+    let count = todayQualifies ? 1 : 0;
+    let cursor = shiftDate(today, -1);
+    while (dayQual(cursor)) { count++; cursor = shiftDate(cursor, -1); }
+    return count;
+  }, [dayQual, todayQualifies, today]);
+
+  const adherence = useMemo(() => {
+    let sum = 0;
+    for (let i = 0; i < 7; i++) sum += dayScore(shiftDate(today, -i), history, settings, today, day);
+    return Math.round(sum / 7);
+  }, [history, settings, today, day]);
+
+  const level = levelFromXp(profile.xp);
+  const nextXp = xpForLevel(level + 1);
+  const prevXp = xpForLevel(level);
+  const levelPct = Math.min(100, Math.round(((profile.xp - prevXp) / (nextXp - prevXp)) * 100));
+
+  const ctx = { day, settings, weights, onPlanNow };
+  const quests = useMemo(() => questsForDate(today), [today]);
+  const pepTalk = PEP_TALKS[hashStr("pep" + today) % PEP_TALKS.length];
+  const foodPh = FOOD_PLACEHOLDERS[hashStr("ph" + today) % FOOD_PLACEHOLDERS.length];
+  const emptyLine = EMPTY_LOG_LINES[hashStr("mt" + today) % EMPTY_LOG_LINES.length];
+  const questStatus = quests.map((q) => (q.manual ? !!day.mq[q.id] : q.test(ctx)));
+  const questsDone = questStatus.filter(Boolean).length;
+
+  const wins = windowsFilled(day);
+  const nowHour = new Date().getHours();
+  const nudge =
+    day.entries.length === 0 && nowHour >= 11 && nowHour < 15
+      ? { msg: "Lunch check-in. Thirty seconds now beats reconstructing your day at 9pm.", action: "Log it" }
+      : day.entries.length === 0 && nowHour >= 15
+      ? { msg: "Nothing logged yet. The adherence score forgives; it just wants a row of data.", action: "Log it" }
+      : !day.closed && nowHour >= 20
+      ? { msg: "Kids down? Close the day. Sixty seconds, then the numbers do their thing.", action: "Close the Day" }
+      : null;
+
+  const chain = useMemo(() => {
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const ds = shiftDate(today, -i);
+      const rec = history[ds];
+      days.push({
+        ds,
+        ok: ds === today ? todayQualifies : dayQual(ds),
+        shield: !!(rec && rec.shield),
+        logged: ds === today ? day.entries.length > 0 || day.steps > 0 : !!rec,
+        isToday: ds === today,
+      });
+    }
+    return days;
+  }, [history, today, todayQualifies, dayQual, day]);
+
+  /* ---------- charts ---------- */
+  const calChart = useMemo(() => {
+    const out = [];
+    for (let i = 13; i >= 0; i--) {
+      const ds = shiftDate(today, -i);
+      const rec = ds === today ? { c: total } : history[ds];
+      out.push({ d: shortDate(ds), cal: rec ? rec.c : 0 });
+    }
+    return out;
+  }, [history, today, total]);
+
+  const stepChart = useMemo(() => {
+    const out = [];
+    for (let i = 13; i >= 0; i--) {
+      const ds = shiftDate(today, -i);
+      const rec = ds === today ? { s: day.steps } : history[ds];
+      out.push({ d: shortDate(ds), steps: rec ? rec.s : 0 });
+    }
+    return out;
+  }, [history, today, day.steps]);
+
+  const weightSorted = useMemo(() => [...weights].sort((a, b) => (a.d < b.d ? -1 : 1)), [weights]);
+  const weightChart = useMemo(() => weightSorted.map((w) => ({ d: shortDate(w.d), ds: w.d, w: w.w })), [weightSorted]);
+
+  const weekReport = useMemo(() => {
+    const mk = (offset) => {
+      const mon = shiftDate(weekMonday(today), offset * -7);
+      let cal = 0, steps = 0, onPlanDays = 0, loggedDays = 0;
+      for (let i = 0; i < 7; i++) {
+        const ds = shiftDate(mon, i);
+        if (ds > today) break;
+        const rec = ds === today ? { c: total, s: day.steps, e: day.entries.length } : history[ds];
+        if (rec && rec.e > 0) { loggedDays++; cal += rec.c; }
+        if (rec) steps += rec.s;
+        if (rec && rec.e > 0 && onPlanCal(ds, history, settings, today, total) && rec.s >= settings.stepGoal) onPlanDays++;
+      }
+      return { cal: loggedDays ? Math.round(cal / loggedDays) : 0, steps, onPlanDays, loggedDays };
+    };
+    return { thisWeek: mk(0), lastWeek: mk(1) };
+  }, [history, settings, today, total, day]);
+
+  const pace = useMemo(() => {
+    if (weightSorted.length < 2) return null;
+    const first = weightSorted[0], last = weightSorted[weightSorted.length - 1];
+    const [y1, m1, d1] = first.d.split("-").map(Number);
+    const [y2, m2, d2] = last.d.split("-").map(Number);
+    const days = Math.max(1, (new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000);
+    const perWeek = ((last.w - first.w) / days) * 7;
+    const in30 = last.w + (perWeek / 7) * 30;
+    return { perWeek, in30 };
+  }, [weightSorted]);
+
+  const overlayChart = useMemo(() => {
+    const wmap = Object.fromEntries(weights.map((w) => [w.d, w.w]));
+    const out = [];
+    for (let i = 27; i >= 0; i--) {
+      const ds = shiftDate(today, -i);
+      const rec = ds === today ? { c: total } : history[ds];
+      out.push({ d: shortDate(ds), cal: (rec && rec.c) || null, w: wmap[ds] != null ? wmap[ds] : null });
+    }
+    return out;
+  }, [history, weights, today, total]);
+
+  /* ---------- actions ---------- */
+  const awardXp = async (amount) => {
+    const before = levelFromXp(profile.xp);
+    const next = Object.assign({}, profile, { xp: profile.xp + amount });
+    await commitProfile(next);
+    const after = levelFromXp(next.xp);
+    if (after > before) flash(`LEVEL ${after} — new analytics unlocked in Trends`);
+    return after > before;
+  };
+
+  const addEntry = async (name, cal, p = 0, f = 0) => {
+    const e = { id: Date.now(), name: name.trim() || "Food", cal: Math.max(0, Math.round(cal)), p: Math.max(0, Math.round(p || 0)), f: Math.max(0, Math.round(f || 0)), hour: new Date().getHours() };
+    await commitDay(Object.assign({}, day, { entries: [...day.entries, e], xp: day.xp + 5 }));
+    await awardXp(5);
+    setDesc(""); setCalInput(""); setProtInput(""); setFibInput(""); setEstimateNote("");
+  };
+  const removeEntry = async (id) => commitDay(Object.assign({}, day, { entries: day.entries.filter((e) => e.id !== id) }));
+  const saveSteps = async (val) => {
+    const n = parseInt(val != null ? val : stepInput, 10);
+    if (!isNaN(n) && n >= 0) { await commitDay(Object.assign({}, day, { steps: n })); setStepInput(""); return true; }
+    return false;
+  };
+  const savePreset = async (name, cal, p = 0, f = 0) => {
+    if (presets.some((x) => x.name === name)) return;
+    const next = [...presets, { name, cal, p, f }];
+    setPresets(next); await sset(K.presets, next);
+    flash("Saved as preset");
+  };
+  const deletePreset = async (name) => {
+    const next = presets.filter((p) => p.name !== name);
+    setPresets(next); await sset(K.presets, next);
+  };
+  const saveWeight = async (val) => {
+    const w = parseFloat(val != null ? val : weightInput);
+    if (isNaN(w) || w <= 0) return false;
+    const next = [...weights.filter((x) => x.d !== today), { d: today, w }];
+    setWeights(next); await sset(K.weight, next); setWeightInput("");
+    return true;
+  };
+  const toggleManualQuest = async (qid) => {
+    if (day.closed) return;
+    const mq = Object.assign({}, day.mq);
+    mq[qid] = !mq[qid];
+    await commitDay(Object.assign({}, day, { mq }));
+  };
+
+  /* ---------- food estimate: local table -> cache -> USDA ---------- */
+  const estimate = async () => {
+    if (!desc.trim()) return;
+    setEstimating(true); setEstimateNote("");
+    try {
+      const { segments } = await lookupFood(desc);
+      const parts = segments.map((s) =>
+        s.status === "resolved" ? s.entry :
+        s.status === "candidates" ? s.candidates[0] : null
+      );
+      const good = parts.filter(Boolean);
+      const missed = segments.filter((s, i) => !parts[i]).map((s) => s.parsed.raw);
+
+      if (!good.length) {
+        setEstimateNote(
+          segments.some((s) => s.source === "nokey")
+            ? "No local match, and no USDA key set. Add your free key at the top of index.html for full lookup, or enter values manually."
+            : "No match found. Enter the numbers manually and it'll be cached next time."
+        );
+      } else {
+        const cal = good.reduce((a, e) => a + e.cal, 0);
+        const p = good.reduce((a, e) => a + e.p, 0);
+        const f = good.reduce((a, e) => a + e.f, 0);
+        const rough = good.some((e) => e.rough);
+        const hadCandidates = segments.some((s) => s.status === "candidates");
+        setDesc(good.map((e) => e.name).join(" + ").slice(0, 60));
+        setCalInput(String(cal)); setProtInput(String(p)); setFibInput(String(f));
+        const bits = [`${rough ? "~" : ""}${cal} cal · 💪${p}g · 🥦${f}g`];
+        if (hadCandidates) bits.push("closest USDA match used — edit if it looks off");
+        if (rough) bits.push("portion estimated");
+        if (missed.length) bits.push(`no match for: ${missed.join(", ")}`);
+        bits.push("Edit anything, then Add.");
+        setEstimateNote(bits.join(". "));
+      }
+    } catch (e) {
+      setEstimateNote(`Lookup failed (${e.message}). Enter values manually.`);
+    }
+    setEstimating(false);
+  };
+
+  const submitFood = () => {
+    const cal = parseInt(calInput, 10);
+    if (desc.trim() && !isNaN(cal)) addEntry(desc, cal, parseInt(protInput, 10) || 0, parseInt(fibInput, 10) || 0);
+    else if (desc.trim() && !calInput) estimate();
+  };
+
+  const saveSettings = async () => {
+    const ct = parseInt(calDraft, 10), sg = parseInt(stepDraft, 10), pg = parseInt(protDraft, 10), fg = parseInt(fibDraft, 10);
+    const next = {
+      calTarget: !isNaN(ct) && ct > 0 ? ct : settings.calTarget,
+      stepGoal: !isNaN(sg) && sg > 0 ? sg : settings.stepGoal,
+      proteinGoal: !isNaN(pg) && pg > 0 ? pg : settings.proteinGoal,
+      fiberGoal: !isNaN(fg) && fg > 0 ? fg : settings.fiberGoal,
+    };
+    setSettings(next); await sset(K.settings, next);
+    setShowSettings(false); setCalDraft(""); setStepDraft("");
+  };
+
+  /* ---------- Close the Day ritual ---------- */
+  const startClose = () => setCloseFlow({ step: 1, steps: day.steps ? String(day.steps) : "", weight: "" });
+
+  const finishClose = async () => {
+    let d = day;
+    const n = parseInt(closeFlow.steps, 10);
+    if (!isNaN(n) && n >= 0 && n !== day.steps) { d = Object.assign({}, d, { steps: n }); }
+    let wLogged = weights.some((w) => w.d === today);
+    if (closeFlow.weight) { const ok = await saveWeight(closeFlow.weight); if (ok) wLogged = true; }
+
+    const liveOnPlan = onPlanCal(today, history, settings, today, totalCal(d));
+    const stepsHit = d.steps >= settings.stepGoal;
+    const w = windowsFilled(d);
+    const windowCount = [w.morning, w.midday, w.evening].filter(Boolean).length;
+    const qDone = quests.map((q) => (q.manual ? !!d.mq[q.id] : q.test({ day: d, settings, weights, onPlanNow: liveOnPlan }))).filter(Boolean).length;
+
+    const yesterday = shiftDate(today, -1);
+    const yRec = history[yesterday];
+    const yQualified = (yRec && yRec.shield) || (yRec && yRec.c > 0 && yRec.s >= settings.stepGoal && onPlanCal(yesterday, history, settings, null, null));
+    const comeback = !yQualified && d.entries.length > 0;
+
+    let xp = 20;
+    const lines = [{ t: "Closed the day", v: 20 }];
+    if (liveOnPlan) { xp += 30; lines.push({ t: "On plan", v: 30 }); }
+    if (stepsHit) { xp += 25; lines.push({ t: "Step goal", v: 25 }); }
+    if (qDone > 0) { xp += qDone * 15; lines.push({ t: `Quests ×${qDone}`, v: qDone * 15 }); }
+    if (qDone === 3) { xp += 25; lines.push({ t: "Full quest board", v: 25 }); }
+    if (wLogged) { xp += 10; lines.push({ t: "Weigh-in", v: 10 }); }
+    const pHit = totalProt(d) >= settings.proteinGoal;
+    const fHit = totalFib(d) >= settings.fiberGoal;
+    if (pHit) { xp += 15; lines.push({ t: "💪 Protein goal", v: 15 }); }
+    if (fHit) { xp += 15; lines.push({ t: "🥦 Fiber goal", v: 15 }); }
+    if (pHit && fHit) { xp += 10; lines.push({ t: "Macro Sweep", v: 10 }); }
+    if (comeback) { xp += 40; lines.push({ t: "COMEBACK", v: 40 }); }
+
+    const score = (liveOnPlan ? 40 : 0) + Math.min(30, Math.round((d.steps / settings.stepGoal) * 30)) + Math.round((windowCount / 3) * 20) + Math.round((qDone / 3) * 10);
+
+    let prof = Object.assign({}, profile, { xp: profile.xp + xp });
+    let tokenEarned = false;
+    if (liveOnPlan && stepsHit) {
+      prof.perfect = (prof.perfect || 0) + 1;
+      if (prof.perfect % 7 === 0 && (prof.tokens || 0) < 3) { prof.tokens = (prof.tokens || 0) + 1; tokenEarned = true; }
+    }
+    const newStreak = (liveOnPlan && stepsHit && d.entries.length > 0 ? 1 : 0) + (() => { let c = 0, cur = yesterday; while (dayQual(cur)) { c++; cur = shiftDate(cur, -1); } return c; })();
+    if (newStreak > (prof.bestStreak || 0)) prof.bestStreak = newStreak;
+
+    const beforeLevel = levelFromXp(profile.xp);
+    const afterLevel = levelFromXp(prof.xp);
+
+    d = Object.assign({}, d, { closed: true, xp: d.xp + xp });
+    await commitDay(d);
+    await commitProfile(prof);
+
+    let onPlan14 = 0;
+    for (let i = 1; i <= 13; i++) if (dayQual(shiftDate(today, -i))) onPlan14++;
+    if (liveOnPlan && stepsHit) onPlan14++;
+    let weekSteps = 0;
+    const mon = weekMonday(today);
+    for (let i = 0; i < 7; i++) { const ds = shiftDate(mon, i); if (ds > today) break; weekSteps += ds === today ? d.steps : (history[ds] && history[ds].s) || 0; }
+    const wd = weightSorted.length >= 2 ? weightSorted[weightSorted.length - 1].w - weightSorted[0].w : null;
+    let protein7 = pHit ? 1 : 0;
+    for (let i = 1; i < 7; i++) { const ds = shiftDate(today, -i); if (((history[ds] && history[ds].p) || 0) >= settings.proteinGoal) protein7++; }
+
+    setCloseFlow({
+      step: 4,
+      reveal: {
+        score, xp, lines, tokenEarned,
+        levelUp: afterLevel > beforeLevel ? afterLevel : null,
+        evidence: evidenceLine({ date: today, comeback, onPlan14, streak: newStreak, bestStreak: prof.bestStreak, weekSteps, stepGoal: settings.stepGoal, weightDelta: wd, protein7 }),
+      },
+    });
+  };
+
+  /* ---------- photos ---------- */
+  const addPhoto = async (file) => {
+    if (!file) return;
+    setPhotoBusy(true); setPhotoNote("");
+    try {
+      const dataUrl = await compressImage(file);
+      const ok = await sset(K.photo(today), dataUrl);
+      if (!ok) { setPhotoNote("Couldn't save. Storage may be full."); setPhotoBusy(false); return; }
+      setPhotos((prev) => Object.assign({}, prev, { [today]: dataUrl }));
+      if (!photoIndex.includes(today)) {
+        const next = [...photoIndex, today].sort();
+        setPhotoIndex(next); await sset(K.photoIndex, next);
+      }
+      setPhotoNote("Saved. One photo per day; a new upload replaces it.");
+    } catch { setPhotoNote("Couldn't process that image."); }
+    setPhotoBusy(false);
+  };
+  const deletePhoto = async (ds) => {
+    try { await window.storage.delete(K.photo(ds)); } catch {}
+    const next = photoIndex.filter((x) => x !== ds);
+    setPhotoIndex(next); await sset(K.photoIndex, next);
+    setPhotos((prev) => { const n = Object.assign({}, prev); delete n[ds]; return n; });
+    setViewPhoto(null);
+  };
+
+  const exportData = async () => {
+    try {
+      const bundle = { exported: new Date().toISOString(), settings, presets, history, weights, photoIndex, profile, days: {} };
+      for (const ds of Object.keys(history)) { const d = await sget(K.day(ds)); if (d) bundle.days[ds] = d; }
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `macros-and-miles-backup-${todayStr()}.json`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { console.error(e); }
+  };
+
+  const firstPhoto = photoIndex[0];
+  const lastPhoto = photoIndex[photoIndex.length - 1];
+  const weightFor = (ds) => { const hit = weights.find((w) => w.d === ds); return hit ? hit.w : undefined; };
+  const pct = Math.min(100, Math.round((total / Math.max(1, budgetShown)) * 100));
+  const stepPct = Math.min(100, Math.round((day.steps / settings.stepGoal) * 100));
+  const latestW = weightChart.length ? weightChart[weightChart.length - 1].w : null;
+  const firstW = weightChart.length ? weightChart[0].w : null;
+
+  if (!loaded) return <div style={{ fontFamily: "system-ui", padding: 40, color: "#2B1B3D" }}>Loading…</div>;
+
+  return (
+    <div className="sh-root">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Titan+One&family=Nunito:wght@600;700;800;900&display=swap');
+        .sh-root { min-height:100vh; background:#F6EFFF; background-image:radial-gradient(#EBDDFF 1.5px, transparent 1.5px); background-size:22px 22px; color:#2B1B3D; font-family:'Nunito',system-ui,sans-serif; padding:20px 16px 64px; max-width:520px; margin:0 auto; }
+        .sh-root * { box-sizing:border-box; }
+        .num { font-variant-numeric: tabular-nums; }
+        .hdr { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; }
+        .brand { font-family:'Titan One',cursive; font-weight:400; font-size:26px; letter-spacing:.5px; line-height:1; color:#7A2FF2; transform:rotate(-1.5deg); text-shadow:2px 2px 0 #FFC53D; }
+        .brand span { color:#FF3E8A; }
+        .datebar { font-size:11px; color:#7A6B8E; margin-top:6px; font-weight:800; text-transform:uppercase; letter-spacing:1px; display:flex; align-items:center; gap:4px; }
+        .hdr-right { display:flex; gap:14px; align-items:flex-start; }
+        .stat { display:flex; flex-direction:column; align-items:flex-end; }
+        .stat .n { font-weight:900; font-size:26px; line-height:1; }
+        .stat .l { font-size:9px; font-weight:800; letter-spacing:1.2px; text-transform:uppercase; color:#7A6B8E; margin-top:2px; }
+        .lvlbar { display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+        .lvlpill { font-size:11px; font-weight:900; background:#7A2FF2; color:#fff; border-radius:999px; padding:4px 12px; letter-spacing:1px; white-space:nowrap; box-shadow:2px 2px 0 #2B1B3D; }
+        .lvltrack { flex:1; height:10px; background:#fff; border:2px solid #2B1B3D; border-radius:6px; overflow:hidden; }
+        .lvltrack > div { height:100%; background:linear-gradient(90deg,#FF3E8A,#7A2FF2); transition:width .3s ease; }
+        .lvlxp { font-size:11px; font-weight:800; color:#7A6B8E; white-space:nowrap; }
+        .tokens { font-size:12px; }
+        .tabs { display:flex; gap:6px; margin-bottom:14px; }
+        .tabbtn { flex:1; padding:9px 0; font-weight:900; font-size:12px; letter-spacing:1px; text-transform:uppercase; border:2px solid #2B1B3D; border-radius:999px; background:#fff; cursor:pointer; color:#2B1B3D; }
+        .tabbtn.on { background:#FF3E8A; color:#fff; box-shadow:2px 2px 0 #2B1B3D; }
+        .peptalk { background:#FFC53D; border:2px dashed #2B1B3D; border-radius:14px; padding:14px 16px; margin-bottom:14px; transform:rotate(-.8deg); box-shadow:4px 4px 0 #FF3E8A; }
+        .peptalk .pt-label { font-size:10px; font-weight:900; letter-spacing:2px; text-transform:uppercase; color:#7A2FF2; }
+        .peptalk .pt-line { font-size:15px; font-weight:900; margin-top:4px; line-height:1.35; }
+        .chain { display:flex; gap:0; align-items:center; margin:0 0 16px; }
+        .link { flex:1; height:13px; border-radius:7px; background:#fff; border:2px solid #E3D5F5; margin-right:3px; }
+        .link.ok { background:#FF3E8A; border-color:#2B1B3D; }
+        .link.shield { background:#00B3A4; border-color:#2B1B3D; }
+        .link.logged:not(.ok):not(.shield) { background:#E3D5F5; border-color:#CBB8E8; }
+        .link.today { outline:2.5px solid #7A2FF2; outline-offset:2px; }
+        .card { background:#fff; border:2px solid #2B1B3D; border-radius:18px; padding:16px; margin-bottom:16px; box-shadow:5px 5px 0 #00B3A4; }
+        .card:nth-of-type(even) { box-shadow:5px 5px 0 #FF3E8A; }
+        .card h2 { font-size:11px; font-weight:900; letter-spacing:1.5px; text-transform:uppercase; margin:0 0 10px; color:#7A2FF2; display:flex; justify-content:space-between; align-items:center; }
+        .bignum { font-family:'Titan One',cursive; font-weight:400; font-size:42px; line-height:1; }
+        .sub { font-size:13px; color:#7A6B8E; font-weight:700; margin-top:2px; }
+        .bar { height:12px; background:#F6EFFF; border:2px solid #2B1B3D; border-radius:7px; margin-top:12px; overflow:hidden; }
+        .bar > div { height:100%; transition:width .3s ease; }
+        .row { display:flex; gap:8px; margin-top:12px; }
+        input, select { font-family:inherit; font-size:15px; padding:10px 12px; border:2px solid #2B1B3D; border-radius:12px; background:#F6EFFF; width:100%; font-weight:700; color:#2B1B3D; }
+        input::placeholder { color:#A894C4; }
+        input:focus { outline:3px solid #FFC53D; outline-offset:1px; }
+        button { font-family:inherit; font-weight:900; font-size:14px; border:2px solid #2B1B3D; border-radius:999px; padding:10px 16px; cursor:pointer; background:#fff; color:#2B1B3D; }
+        button:focus-visible { outline:3px solid #FFC53D; outline-offset:2px; }
+        button.pri { background:#7A2FF2; color:#fff; box-shadow:2px 2px 0 #2B1B3D; }
+        button.ember { background:#FF3E8A; color:#fff; box-shadow:2px 2px 0 #2B1B3D; }
+        button.ink { background:#2B1B3D; color:#FFC53D; }
+        button:disabled { opacity:.45; cursor:default; box-shadow:none; }
+        .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+        .chip { background:#F6EFFF; border:2px solid #2B1B3D; border-radius:999px; padding:6px 12px; font-size:13px; font-weight:800; cursor:pointer; display:flex; align-items:center; gap:6px; }
+        .chip .x { color:#FF3E8A; font-weight:900; }
+        .quest { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:2px dotted #E3D5F5; }
+        .quest:last-child { border-bottom:none; }
+        .qbox { width:26px; height:26px; border:2px solid #2B1B3D; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:900; flex-shrink:0; background:#fff; margin-top:1px; }
+        .qbox.done { background:#00B3A4; border-color:#2B1B3D; color:#fff; transform:rotate(-4deg); }
+        .qbox.tap { cursor:pointer; border-style:dashed; background:#FFF6DE; }
+        .qname { font-size:14px; font-weight:900; }
+        .qname.done { text-decoration:line-through; color:#7A6B8E; }
+        .qdesc { font-size:12px; color:#7A6B8E; font-weight:700; }
+        .qtag { font-size:9px; font-weight:900; letter-spacing:1px; color:#FF3E8A; text-transform:uppercase; margin-left:6px; }
+        .entry { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:2px dotted #E3D5F5; }
+        .entry:last-child { border-bottom:none; }
+        .entry .nm { font-weight:700; font-size:14px; }
+        .entry .actions { display:flex; gap:10px; align-items:center; }
+        .entry .cal { font-weight:900; font-size:14px; }
+        .tinybtn { border:none; background:none; padding:2px 4px; font-size:15px; cursor:pointer; }
+        .note { font-size:12px; color:#7A2FF2; font-weight:800; margin-top:8px; }
+        .gear { border:none; background:none; font-size:16px; cursor:pointer; padding:2px 4px; }
+        .empty { font-size:13px; color:#7A6B8E; font-weight:700; padding:6px 0; font-style:italic; }
+        .nudge { background:#FFF6DE; border:2px solid #FFC53D; border-radius:14px; padding:12px 14px; font-size:13px; font-weight:800; margin-bottom:14px; display:flex; justify-content:space-between; align-items:center; gap:10px; transform:rotate(.5deg); }
+        .nudge button { padding:6px 12px; font-size:12px; white-space:nowrap; }
+        .pips { display:flex; gap:6px; margin-top:10px; }
+        .pip { flex:1; text-align:center; font-size:11px; font-weight:900; letter-spacing:.5px; text-transform:uppercase; padding:7px 0; border:2px solid #2B1B3D; border-radius:999px; background:#fff; color:#7A6B8E; cursor:pointer; }
+        .pip.filled { background:#00B3A4; color:#fff; }
+        .bank { background:#EDFBF9; border:2px solid #00B3A4; border-radius:14px; padding:10px 14px; font-size:13px; font-weight:800; margin-top:12px; }
+        .macrorow { display:flex; align-items:center; gap:14px; padding:9px 0; border-bottom:2px dotted #E3D5F5; }
+        .macrorow:last-of-type { border-bottom:none; }
+        .micons { font-size:20px; letter-spacing:3px; white-space:nowrap; }
+        .mgoal { font-size:14px; font-weight:900; }
+        .mhit { font-size:10px; font-weight:900; letter-spacing:1px; color:#00B3A4; }
+        .pgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
+        .pcell { position:relative; border:2px solid #2B1B3D; border-radius:12px; overflow:hidden; aspect-ratio:3/4; background:#F6EFFF; cursor:pointer; }
+        .pcell img { width:100%; height:100%; object-fit:cover; display:block; }
+        .pcell .pd { position:absolute; bottom:0; left:0; right:0; background:rgba(43,27,61,.85); color:#fff; font-size:10px; font-weight:800; text-align:center; padding:3px 0; }
+        .compare { display:flex; gap:8px; margin-top:12px; }
+        .compare .side { flex:1; }
+        .compare img { width:100%; border:2px solid #2B1B3D; border-radius:12px; display:block; }
+        .compare .cl { font-size:11px; font-weight:900; text-transform:uppercase; letter-spacing:1px; color:#7A6B8E; margin-bottom:4px; text-align:center; }
+        .modal { position:fixed; inset:0; background:rgba(43,27,61,.88); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:20px; z-index:50; }
+        .modal img { max-width:100%; max-height:75vh; border-radius:14px; }
+        .modal .mrow { display:flex; gap:10px; margin-top:14px; }
+        .modal button { background:#fff; }
+        .sheet { position:fixed; inset:0; background:rgba(43,27,61,.65); display:flex; align-items:flex-end; justify-content:center; z-index:60; }
+        .sheet-inner { background:#F6EFFF; width:100%; max-width:520px; border-radius:24px 24px 0 0; border:2px solid #2B1B3D; border-bottom:none; padding:20px 18px 36px; max-height:85vh; overflow-y:auto; }
+        .sheet h3 { font-weight:900; font-size:18px; margin:0 0 4px; }
+        .sheet .stepno { font-size:10px; font-weight:900; letter-spacing:1.5px; text-transform:uppercase; color:#7A2FF2; }
+        .reveal-score { font-family:'Titan One',cursive; font-weight:400; font-size:76px; line-height:1; text-align:center; margin:14px 0 4px; text-shadow:3px 3px 0 #FFC53D; }
+        .reveal-label { text-align:center; font-size:11px; font-weight:900; letter-spacing:2px; text-transform:uppercase; color:#7A6B8E; }
+        .reveal-quip { text-align:center; font-size:14px; font-weight:900; margin-top:6px; color:#7A2FF2; }
+        .xpline { display:flex; justify-content:space-between; font-size:13px; font-weight:800; padding:6px 0; border-bottom:2px dotted #E3D5F5; }
+        .xpline .v { color:#7A2FF2; }
+        .evidence { background:#2B1B3D; color:#FFC53D; border-radius:14px; padding:14px; font-size:14px; font-weight:800; margin-top:14px; text-align:center; transform:rotate(-.5deg); }
+        .toast { position:fixed; top:16px; left:50%; transform:translateX(-50%); background:#FF3E8A; color:#fff; font-weight:900; font-size:13px; padding:10px 18px; border-radius:999px; z-index:70; box-shadow:3px 3px 0 #2B1B3D; }
+        .lock { font-size:13px; color:#7A6B8E; font-weight:800; padding:8px 0; }
+        @media (prefers-reduced-motion: reduce) { .bar > div, .lvltrack > div { transition:none; } }
+      `}</style>
+
+      {toast && <div className="toast">{toast}</div>}
+
+      <div className="hdr">
+        <div>
+          <div className="brand">MACROS <span>&</span> MILES</div>
+          <div className="datebar">
+            {new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+            <button className="gear" aria-label="Settings" onClick={() => { setShowSettings(!showSettings); setCalDraft(String(settings.calTarget)); setStepDraft(String(settings.stepGoal)); setProtDraft(String(settings.proteinGoal)); setFibDraft(String(settings.fiberGoal)); }}>⚙︎</button>
+          </div>
+        </div>
+        <div className="hdr-right">
+          <div className="stat">
+            <div className="n num" style={{ color: adherence >= 70 ? "#00B3A4" : adherence >= 40 ? "#F0A500" : "#7A6B8E" }}>{adherence}</div>
+            <div className="l">7-day score</div>
+          </div>
+          <div className="stat">
+            <div className="n num" style={{ color: streak > 0 ? "#FF3E8A" : "#C9B8DE" }}>{streak > 0 ? `🔥${streak}` : "0"}</div>
+            <div className="l">streak · best {profile.bestStreak || 0}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="lvlbar">
+        <div className="lvlpill">LVL {level}</div>
+        <div className="lvltrack"><div style={{ width: `${levelPct}%` }} /></div>
+        <div className="lvlxp num">{profile.xp}/{nextXp} XP</div>
+        <div className="tokens" title="Rest Day tokens auto-shield a missed day">{"🛡".repeat(profile.tokens || 0)}</div>
+      </div>
+
+      {showSettings && (
+        <div className="card">
+          <h2>Settings</h2>
+          <div className="row"><input inputMode="numeric" value={calDraft} onChange={(e) => setCalDraft(e.target.value)} placeholder="Daily calorie target" aria-label="Calorie target" /></div>
+          <div className="row"><input inputMode="numeric" value={stepDraft} onChange={(e) => setStepDraft(e.target.value)} placeholder="Step goal" aria-label="Step goal" /></div>
+          <div className="row">
+            <input inputMode="numeric" value={protDraft} onChange={(e) => setProtDraft(e.target.value)} placeholder="💪 Protein goal (g)" aria-label="Protein goal in grams" />
+            <input inputMode="numeric" value={fibDraft} onChange={(e) => setFibDraft(e.target.value)} placeholder="🥦 Fiber goal (g)" aria-label="Fiber goal in grams" />
+          </div>
+          <div className="row"><button className="pri" onClick={saveSettings}>Save settings</button><button onClick={() => setShowSettings(false)}>Cancel</button></div>
+          <div className="row"><button onClick={exportData}>Export backup (JSON)</button></div>
+          <div className="sub" style={{ marginTop: 10 }}>Weekly budget = daily target × 7. Mon–Thu surplus banks into the Fri–Sun pool. Every 7 perfect days earns a 🛡 Rest Day token (max 3) that auto-shields a miss.</div>
+        </div>
+      )}
+
+      <div className="tabs" role="tablist">
+        {["today", "trends", "photos"].map((t) => (
+          <button key={t} role="tab" aria-selected={tab === t} className={`tabbtn ${tab === t ? "on" : ""}`} onClick={() => setTab(t)}>{t}</button>
+        ))}
+      </div>
+
+      {tab === "today" && (
+        <React.Fragment>
+          <div className="peptalk">
+            <div className="pt-label">Today's pep talk</div>
+            <div className="pt-line">{pepTalk}</div>
+          </div>
+          {nudge && (
+            <div className="nudge">
+              <span>⏰ {nudge.msg}</span>
+              <button onClick={() => (nudge.action === "Close the Day" ? startClose() : foodInputRef.current && foodInputRef.current.focus())}>{nudge.action}</button>
+            </div>
+          )}
+          <div className="chain" aria-label="Last 14 days">
+            {chain.map((d) => (
+              <div key={d.ds} className={`link ${d.shield ? "shield" : d.ok ? "ok" : ""} ${d.logged ? "logged" : ""} ${d.isToday ? "today" : ""}`} title={d.ds + (d.shield ? " (shielded)" : "")} />
+            ))}
+          </div>
+
+          <div className="card">
+            <h2>{poolDay ? <React.Fragment>Weekend pool <span style={{ color: "#7A2FF2" }}>FRI–SUN</span></React.Fragment> : "Today's budget"}</h2>
+            <div className="bignum num" style={{ color: remaining < 0 ? "#FF3E8A" : "#2B1B3D" }}>
+              {remaining < 0 ? `+${Math.abs(remaining)}` : remaining.toLocaleString()}
+            </div>
+            <div className="sub num">
+              {remaining < 0 ? "over" : "remaining"} · {poolDay ? `${poolSpent.toLocaleString()} / ${pool.toLocaleString()} pool · today so far: ${total.toLocaleString()}` : `${total} / ${settings.calTarget} today`}
+            </div>
+            {poolDay && remaining > 0 && (
+              <div className="sub num" style={{ color: "#7A2FF2" }}>Pace guide: ~{suggestedToday.toLocaleString()} today keeps the pool intact through Sunday.</div>
+            )}
+            {!poolDay && remaining < 0 && (
+              <div className="sub" style={{ color: "#FF3E8A" }}>Over budget. Log it anyway — data doesn't judge, it just testifies later. The 7-day score barely felt that.</div>
+            )}
+            <div className="bar"><div style={{ width: `${poolDay ? Math.min(100, Math.round((poolSpent / pool) * 100)) : pct}%`, background: remaining < 0 ? "#FF3E8A" : "#7A2FF2" }} /></div>
+
+            {!poolDay && (
+              <div className="bank num">🏦 Banked for the weekend: {bank.toLocaleString()} cal{total > 0 && total < settings.calTarget ? ` (includes ${settings.calTarget - total} pending today)` : ""}</div>
+            )}
+            {poolDay && bank > 0 && (
+              <div className="bank num">🏦 Your Mon–Thu banking added {bankEarned(today, history, settings, null, null).toLocaleString()} cal to this pool. Date night is pre-funded.</div>
+            )}
+
+            <div className="pips" aria-label="Meal windows — filled means you logged in that window; tap to log">
+              <div role="button" tabIndex={0} className={`pip ${wins.morning ? "filled" : ""}`} onClick={() => foodInputRef.current && foodInputRef.current.focus()}>morning</div>
+              <div role="button" tabIndex={0} className={`pip ${wins.midday ? "filled" : ""}`} onClick={() => foodInputRef.current && foodInputRef.current.focus()}>midday</div>
+              <div role="button" tabIndex={0} className={`pip ${wins.evening ? "filled" : ""}`} onClick={() => foodInputRef.current && foodInputRef.current.focus()}>evening</div>
+            </div>
+
+            <div className="row">
+              <input ref={foodInputRef} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={foodPh} aria-label="Food description" onKeyDown={(e) => e.key === "Enter" && submitFood()} />
+            </div>
+            <div className="row">
+              <input inputMode="numeric" value={calInput} onChange={(e) => setCalInput(e.target.value)} placeholder="cal" aria-label="Calories" />
+              <input inputMode="numeric" value={protInput} onChange={(e) => setProtInput(e.target.value)} placeholder="💪g" aria-label="Protein grams" />
+              <input inputMode="numeric" value={fibInput} onChange={(e) => setFibInput(e.target.value)} placeholder="🥦g" aria-label="Fiber grams" />
+            </div>
+            <div className="row">
+              <button className="ember" style={{ flex: 1 }} onClick={estimate} disabled={estimating || !desc.trim()}>{estimating ? "consulting the snack actuary…" : "Estimate"}</button>
+              <button className="pri" style={{ flex: 1 }} onClick={submitFood} disabled={!desc.trim() || !calInput}>Add</button>
+            </div>
+            {estimateNote && <div className="note">{estimateNote}</div>}
+
+            {presets.length > 0 && (
+              <div className="chips">
+                {presets.map((p) => (
+                  <div key={p.name} className="chip" onClick={() => (managePresets ? deletePreset(p.name) : addEntry(p.name, p.cal, p.p || 0, p.f || 0))}>
+                    {p.name} <span className="num" style={{ color: "#7A6B8E" }}>{p.cal}</span>
+                    {managePresets && <span className="x">×</span>}
+                  </div>
+                ))}
+                <div className="chip" style={{ background: "#fff" }} onClick={() => setManagePresets(!managePresets)}>{managePresets ? "done" : "edit"}</div>
+              </div>
+            )}
+
+            <div style={{ marginTop: 14 }}>
+              {day.entries.length === 0 && <div className="empty">{emptyLine}</div>}
+              {day.entries.map((e) => (
+                <div className="entry" key={e.id}>
+                  <span className="nm">{e.name}</span>
+                  <span className="actions">
+                    <span className="cal num">{e.cal}</span>
+                    <button className="tinybtn" title="Save as preset" aria-label={`Save ${e.name} as preset`} onClick={() => savePreset(e.name, e.cal, e.p || 0, e.f || 0)}>☆</button>
+                    <button className="tinybtn" title="Delete" aria-label={`Delete ${e.name}`} onClick={() => removeEntry(e.id)}>✕</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card">
+            <h2>Power-ups</h2>
+            <div className="macrorow">
+              <span className="micons" aria-hidden="true">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <span key={i} style={{ opacity: totP >= ((i + 1) / 5) * settings.proteinGoal ? 1 : 0.22 }}>💪</span>
+                ))}
+              </span>
+              <div>
+                <div className="mgoal num">{totP}g / {settings.proteinGoal}g protein</div>
+                {totP >= settings.proteinGoal ? <div className="mhit">GOAL HIT · +15 XP at close</div> : <div className="qdesc num">{settings.proteinGoal - totP}g to go</div>}
+              </div>
+            </div>
+            <div className="macrorow">
+              <span className="micons" aria-hidden="true">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <span key={i} style={{ opacity: totF >= ((i + 1) / 5) * settings.fiberGoal ? 1 : 0.22 }}>🥦</span>
+                ))}
+              </span>
+              <div>
+                <div className="mgoal num">{totF}g / {settings.fiberGoal}g fiber</div>
+                {totF >= settings.fiberGoal ? <div className="mhit">GOAL HIT · +15 XP at close</div> : <div className="qdesc num">{settings.fiberGoal - totF}g to go</div>}
+              </div>
+            </div>
+            <div className="sub">Hit both for the Macro Sweep bonus. Grams fill in via Estimate or manually.</div>
+          </div>
+
+          <div className="card">
+            <h2>Steps</h2>
+            <div className="bignum num">{day.steps.toLocaleString()}</div>
+            <div className="sub num">of {settings.stepGoal.toLocaleString()} · {stepPct}%</div>
+            <div className="bar"><div style={{ width: `${stepPct}%`, background: stepPct >= 100 ? "#00B3A4" : "#7A2FF2" }} /></div>
+            <div className="row">
+              <input inputMode="numeric" value={stepInput} onChange={(e) => setStepInput(e.target.value)} placeholder="Count from your watch" aria-label="Step count" onKeyDown={(e) => e.key === "Enter" && saveSteps()} />
+              <button className="pri" onClick={() => saveSteps()} disabled={!stepInput}>Save</button>
+            </div>
+          </div>
+
+          <div className="card">
+            <h2>Quest board · {questsDone}/3 {poolDay && <span style={{ color: "#F0A500" }}>WEEKEND SET</span>}</h2>
+            {quests.map((q, i) => (
+              <div className="quest" key={q.id}>
+                <div
+                  className={`qbox ${questStatus[i] ? "done" : ""} ${q.manual && !day.closed ? "tap" : ""}`}
+                  role={q.manual ? "checkbox" : undefined}
+                  aria-checked={q.manual ? questStatus[i] : undefined}
+                  onClick={() => q.manual && toggleManualQuest(q.id)}
+                >{questStatus[i] ? "✓" : ""}</div>
+                <div>
+                  <div className={`qname ${questStatus[i] ? "done" : ""}`}>{q.label}{q.manual && <span className="qtag">tap to claim</span>}</div>
+                  <div className="qdesc">{q.desc}</div>
+                </div>
+              </div>
+            ))}
+            <div className="sub" style={{ marginTop: 8 }}>+15 XP each · +25 bonus for the full board, awarded at day close.</div>
+          </div>
+
+          <div className="card">
+            <h2>{day.closed ? "Day closed" : "Close the Day"}</h2>
+            {day.closed ? (
+              <div className="sub">Done for today. +{day.xp} XP banked. See you at lunch tomorrow.</div>
+            ) : (
+              <React.Fragment>
+                <div className="sub">The 60-second ritual: confirm food, enter steps, optional weigh-in, then the numbers reveal.</div>
+                <div className="row"><button className="ink" style={{ width: "100%" }} onClick={startClose}>Close the Day →</button></div>
+              </React.Fragment>
+            )}
+          </div>
+        </React.Fragment>
+      )}
+
+      {tab === "trends" && (
+        <React.Fragment>
+          <div className="card">
+            <h2>Weight {latestW !== null && firstW !== null && weightChart.length > 1 && (
+              <span className="num" style={{ color: latestW <= firstW ? "#00B3A4" : "#FF3E8A", fontSize: 12 }}>
+                {latestW <= firstW ? "▼" : "▲"} {Math.abs(latestW - firstW).toFixed(1)} total
+              </span>
+            )}</h2>
+            {latestW !== null && <div className="bignum num">{latestW}</div>}
+            <div className="row">
+              <input inputMode="decimal" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} placeholder="Today's weight" aria-label="Weight" onKeyDown={(e) => e.key === "Enter" && saveWeight()} />
+              <button className="pri" onClick={() => saveWeight()} disabled={!weightInput}>Log</button>
+            </div>
+            {weightChart.length > 1 ? (
+              <div style={{ height: 180, marginTop: 14 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weightChart} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+                    <CartesianGrid stroke="#EFE5FB" />
+                    <XAxis dataKey="d" tick={{ fontSize: 11, fontWeight: 600 }} />
+                    <YAxis domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 11, fontWeight: 600 }} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="w" stroke="#7A2FF2" strokeWidth={2.5} dot={{ r: 3, fill: "#7A2FF2" }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="empty" style={{ marginTop: 10 }}>Two or more weigh-ins and the trend line appears. Weekly is plenty — daily noise is mostly water.</div>
+            )}
+          </div>
+
+          <div className="card">
+            <h2>Weekly report card {level < 2 && "🔒"}</h2>
+            {level >= 2 ? (
+              <React.Fragment>
+                <div className="xpline"><span>Avg daily calories</span><span className="num">{weekReport.thisWeek.cal} <span style={{ color: "#7A6B8E" }}>(last wk {weekReport.lastWeek.cal})</span></span></div>
+                <div className="xpline"><span>Total steps</span><span className="num">{weekReport.thisWeek.steps.toLocaleString()} <span style={{ color: "#7A6B8E" }}>(last wk {weekReport.lastWeek.steps.toLocaleString()})</span></span></div>
+                <div className="xpline"><span>Perfect days</span><span className="num">{weekReport.thisWeek.onPlanDays} <span style={{ color: "#7A6B8E" }}>(last wk {weekReport.lastWeek.onPlanDays})</span></span></div>
+                <div className="xpline"><span>Days logged</span><span className="num">{weekReport.thisWeek.loggedDays} <span style={{ color: "#7A6B8E" }}>(last wk {weekReport.lastWeek.loggedDays})</span></span></div>
+              </React.Fragment>
+            ) : (
+              <div className="lock">Unlocks at Level 2 ({xpForLevel(2)} XP). This week vs last: avg calories, steps, perfect days.</div>
+            )}
+          </div>
+
+          <div className="card">
+            <h2>Pace projection {level < 3 && "🔒"}</h2>
+            {level >= 3 ? (
+              pace ? (
+                <React.Fragment>
+                  <div className="bignum num" style={{ fontSize: 32, color: pace.perWeek <= 0 ? "#00B3A4" : "#FF3E8A" }}>
+                    {pace.perWeek <= 0 ? "" : "+"}{pace.perWeek.toFixed(1)}/week
+                  </div>
+                  <div className="sub num">At this rate: {pace.in30.toFixed(1)} in 30 days. Trend, not prophecy — the trend responds to inputs.</div>
+                </React.Fragment>
+              ) : (
+                <div className="empty">Needs two or more weigh-ins to compute a rate.</div>
+              )
+            ) : (
+              <div className="lock">Unlocks at Level 3 ({xpForLevel(3)} XP). Your weekly rate of change and 30-day projection.</div>
+            )}
+          </div>
+
+          <div className="card">
+            <h2>Calories vs weight · 28 days {level < 4 && "🔒"}</h2>
+            {level >= 4 ? (
+              <div style={{ height: 200 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={overlayChart} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+                    <CartesianGrid stroke="#EFE5FB" />
+                    <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 600 }} interval={5} />
+                    <YAxis yAxisId="c" tick={{ fontSize: 10, fontWeight: 600 }} />
+                    <YAxis yAxisId="w" orientation="right" domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 10, fontWeight: 600 }} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
+                    <Line yAxisId="c" type="monotone" dataKey="cal" name="calories" stroke="#FF3E8A" strokeWidth={2} dot={false} connectNulls />
+                    <Line yAxisId="w" type="monotone" dataKey="w" name="weight" stroke="#7A2FF2" strokeWidth={2.5} dot={{ r: 3 }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="lock">Unlocks at Level 4 ({xpForLevel(4)} XP). Intake and weight on one chart — where cause meets effect.</div>
+            )}
+          </div>
+
+          <div className="card">
+            <h2>Calories · last 14 days</h2>
+            <div style={{ height: 160 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={calChart} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+                  <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 600 }} interval={2} />
+                  <YAxis tick={{ fontSize: 10, fontWeight: 600 }} />
+                  <Tooltip />
+                  <ReferenceLine y={settings.calTarget} stroke="#FF3E8A" strokeDasharray="4 4" strokeWidth={2} />
+                  <Bar dataKey="cal" fill="#7A2FF2" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="sub">Dashed line is the daily target. Weekend bars can run over it and still be on plan — the pool math knows.</div>
+          </div>
+
+          <div className="card">
+            <h2>Steps · last 14 days</h2>
+            <div style={{ height: 160 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stepChart} margin={{ top: 8, right: 8, bottom: 0, left: -18 }}>
+                  <XAxis dataKey="d" tick={{ fontSize: 10, fontWeight: 600 }} interval={2} />
+                  <YAxis tick={{ fontSize: 10, fontWeight: 600 }} />
+                  <Tooltip />
+                  <ReferenceLine y={settings.stepGoal} stroke="#00B3A4" strokeDasharray="4 4" strokeWidth={2} />
+                  <Bar dataKey="steps" fill="#FF3E8A" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </React.Fragment>
+      )}
+
+      {tab === "photos" && (
+        <React.Fragment>
+          <div className="card">
+            <h2>Progress photos</h2>
+            <div className="row">
+              <button className="pri" style={{ width: "100%" }} disabled={photoBusy} onClick={() => fileRef.current && fileRef.current.click()}>
+                {photoBusy ? "Compressing…" : photoIndex.includes(today) ? "Replace today's photo" : "Add today's photo"}
+              </button>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { addPhoto(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+            </div>
+            {photoNote && <div className="note">{photoNote}</div>}
+            <div className="sub" style={{ marginTop: 8 }}>Same pose, same lighting, same spot — that's what makes the comparison honest.</div>
+          </div>
+
+          {firstPhoto && lastPhoto && firstPhoto !== lastPhoto && photos[firstPhoto] && photos[lastPhoto] && (
+            <div className="card">
+              <h2>Then vs now</h2>
+              <div className="compare">
+                <div className="side">
+                  <div className="cl">{shortDate(firstPhoto)}{weightFor(firstPhoto) ? ` · ${weightFor(firstPhoto)}` : ""}</div>
+                  <img src={photos[firstPhoto]} alt={`Progress photo ${firstPhoto}`} />
+                </div>
+                <div className="side">
+                  <div className="cl">{shortDate(lastPhoto)}{weightFor(lastPhoto) ? ` · ${weightFor(lastPhoto)}` : ""}</div>
+                  <img src={photos[lastPhoto]} alt={`Progress photo ${lastPhoto}`} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {photoIndex.length > 0 && (
+            <div className="card">
+              <h2>All photos</h2>
+              <div className="pgrid">
+                {[...photoIndex].reverse().map((ds) => (
+                  <div className="pcell" key={ds} onClick={() => setViewPhoto(ds)}>
+                    {photos[ds] ? <img src={photos[ds]} alt={`Progress photo ${ds}`} /> : null}
+                    <div className="pd">{shortDate(ds)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {photoIndex.length === 0 && <div className="empty" style={{ padding: "0 4px" }}>No photos yet. Day one is the one you'll be most glad you took.</div>}
+
+          {viewPhoto && photos[viewPhoto] && (
+            <div className="modal" onClick={() => setViewPhoto(null)}>
+              <img src={photos[viewPhoto]} alt={`Progress photo ${viewPhoto}`} />
+              <div className="mrow" onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => setViewPhoto(null)}>Close</button>
+                <button style={{ color: "#FF3E8A" }} onClick={() => deletePhoto(viewPhoto)}>Delete</button>
+              </div>
+            </div>
+          )}
+        </React.Fragment>
+      )}
+
+      {/* ---------- Close the Day sheet ---------- */}
+      {closeFlow && (
+        <div className="sheet" onClick={() => closeFlow.step !== 4 && setCloseFlow(null)}>
+          <div className="sheet-inner" onClick={(e) => e.stopPropagation()}>
+            {closeFlow.step === 1 && (
+              <React.Fragment>
+                <div className="stepno">Close the day · 1 of 3</div>
+                <h3>Anything missing from the food log?</h3>
+                <div style={{ marginTop: 8 }}>
+                  {day.entries.length === 0 && <div className="empty">Nothing logged yet — add at least one item to close.</div>}
+                  {day.entries.map((e) => (
+                    <div className="entry" key={e.id}><span className="nm">{e.name}</span><span className="cal num">{e.cal}</span></div>
+                  ))}
+                </div>
+                <div className="row">
+                  <input value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Quick add: late-night snack…" />
+                  <input inputMode="numeric" style={{ maxWidth: 90 }} value={calInput} onChange={(e) => setCalInput(e.target.value)} placeholder="cal" />
+                </div>
+                <div className="row">
+                  <button onClick={() => { const c = parseInt(calInput, 10); if (desc.trim() && !isNaN(c)) addEntry(desc, c); }} disabled={!desc.trim() || !calInput}>Add item</button>
+                  <button className="pri" style={{ flex: 1 }} disabled={day.entries.length === 0} onClick={() => setCloseFlow(Object.assign({}, closeFlow, { step: 2 }))}>Food's complete →</button>
+                </div>
+              </React.Fragment>
+            )}
+            {closeFlow.step === 2 && (
+              <React.Fragment>
+                <div className="stepno">Close the day · 2 of 3</div>
+                <h3>Final step count</h3>
+                <div className="sub">Glance at the watch. What's the number?</div>
+                <div className="row">
+                  <input inputMode="numeric" value={closeFlow.steps} onChange={(e) => setCloseFlow(Object.assign({}, closeFlow, { steps: e.target.value }))} placeholder="Steps" />
+                </div>
+                <div className="row">
+                  <button onClick={() => setCloseFlow(Object.assign({}, closeFlow, { step: 1 }))}>← Back</button>
+                  <button className="pri" style={{ flex: 1 }} onClick={() => setCloseFlow(Object.assign({}, closeFlow, { step: 3 }))}>Next →</button>
+                </div>
+              </React.Fragment>
+            )}
+            {closeFlow.step === 3 && (
+              <React.Fragment>
+                <div className="stepno">Close the day · 3 of 3</div>
+                <h3>Weigh-in? (optional, +10 XP)</h3>
+                <div className="row">
+                  <input inputMode="decimal" value={closeFlow.weight} onChange={(e) => setCloseFlow(Object.assign({}, closeFlow, { weight: e.target.value }))} placeholder="Skip or enter weight" />
+                </div>
+                <div className="row">
+                  <button onClick={() => setCloseFlow(Object.assign({}, closeFlow, { step: 2 }))}>← Back</button>
+                  <button className="ink" style={{ flex: 1 }} onClick={finishClose}>Reveal my numbers</button>
+                </div>
+              </React.Fragment>
+            )}
+            {closeFlow.step === 4 && closeFlow.reveal && (
+              <React.Fragment>
+                <div className="stepno">Day closed</div>
+                <div className="reveal-score num" style={{ color: closeFlow.reveal.score >= 70 ? "#00B3A4" : closeFlow.reveal.score >= 40 ? "#F0A500" : "#FF3E8A" }}>{closeFlow.reveal.score}</div>
+                <div className="reveal-label">Day score</div>
+                <div className="reveal-quip">{scoreQuip(closeFlow.reveal.score)}</div>
+                <div style={{ marginTop: 14 }}>
+                  {closeFlow.reveal.lines.map((l, i) => (
+                    <div className="xpline" key={i}><span>{l.t}</span><span className="v num">+{l.v} XP</span></div>
+                  ))}
+                  <div className="xpline" style={{ borderBottom: "none" }}><span style={{ fontWeight: 900 }}>Total</span><span className="v num" style={{ fontWeight: 900 }}>+{closeFlow.reveal.xp} XP</span></div>
+                </div>
+                {closeFlow.reveal.tokenEarned && <div className="note" style={{ color: "#00B3A4" }}>🛡 Rest Day token earned — 7 perfect days banked one automatic shield.</div>}
+                {closeFlow.reveal.levelUp && <div className="note" style={{ color: "#7A2FF2" }}>LEVEL {closeFlow.reveal.levelUp} — new analytics unlocked in Trends.</div>}
+                <div className="evidence">{closeFlow.reveal.evidence}</div>
+                <div className="row"><button className="pri" style={{ width: "100%" }} onClick={() => setCloseFlow(null)}>Done</button></div>
+              </React.Fragment>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Streakhouse />);
+</script>
+</body>
+</html>
