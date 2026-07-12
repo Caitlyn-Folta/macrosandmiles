@@ -1,5 +1,5 @@
 /* Macros & Miles service worker — bump CACHE version when you change index.html */
-const CACHE = "mm-v4";
+const CACHE = "mm-v5";
 
 const ASSETS = [
   "./",
