@@ -1,7 +1,7 @@
 Macros & Miles
 Personal calorie, macro, and step tracker. Runs as a PWA on GitHub Pages — no build step, no server, no dependencies to install. All data lives in the browser storage on the phone; nothing is stored in this repo or anywhere else.
 
-Live app: https://YOUR-USERNAME.github.io/macros-and-miles/ (install via Safari → Share → Add to Home Screen)
+Live app: https://YOUR-USERNAME.github.io/macros-and-miles/ (install via Safari → Share → Add to Home Screen). On phones it's a tabbed single column; on screens 1000px+ it becomes a three-column dashboard (today feed | trends | plan + photos) with no tabs — same data, same logic, layout switches live on resize.
 Files
 File
 What it is
