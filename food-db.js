@@ -12,6 +12,7 @@ const FOOD_DB = [
   { k: ["modelo", "beer"], c: 145, p: 1, f: 0, ml: 355, liquid: true },
   { k: ["light beer", "michelob"], c: 100, p: 1, f: 0, ml: 355, liquid: true },
   { k: ["wine", "rose"], c: 125, p: 0, f: 0, ml: 150, liquid: true },
+  { k: ["skinny margarita", "skinny marg"], c: 140, p: 0, f: 0, ml: 200, liquid: true },
   { k: ["margarita"], c: 250, p: 0, f: 0, ml: 240, liquid: true },
   { k: ["espresso martini"], c: 240, p: 1, f: 0, ml: 130, liquid: true },
   { k: ["cocktail", "old fashioned", "martini"], c: 200, p: 0, f: 0, ml: 120, liquid: true },
