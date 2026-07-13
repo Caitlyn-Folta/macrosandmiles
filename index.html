@@ -227,8 +227,8 @@ const SHARED_QUESTS = [
   { id: "step_goal", label: "Boots on the Ground", desc: "Hit your step goal", test: (c) => c.day.steps >= c.settings.stepGoal },
   { id: "overachiever", label: "Overachiever", desc: "Beat your step goal by 20%", test: (c) => c.day.steps >= Math.round(c.settings.stepGoal * 1.2) },
   { id: "weigh_in", label: "Face the Music", desc: "Step on the scale and log it", test: (c) => c.weights.some((w) => w.d === c.day.date) },
-  { id: "muscle", label: "Muscle Memory", desc: "💪 Hit your protein goal", test: (c) => totalProt(c.day) >= c.settings.proteinGoal },
-  { id: "roughage", label: "The Roughage Report", desc: "🥦 Hit your fiber goal", test: (c) => totalFib(c.day) >= c.settings.fiberGoal },
+  { id: "muscle", label: "Muscle Memory", desc: "Hit your protein goal", test: (c) => totalProt(c.day) >= c.settings.proteinGoal },
+  { id: "roughage", label: "The Roughage Report", desc: "Hit your fiber goal", test: (c) => totalFib(c.day) >= c.settings.fiberGoal },
   { id: "macro_sweep", label: "Macro Sweep", desc: "Protein and fiber goals, same day", test: (c) => totalProt(c.day) >= c.settings.proteinGoal && totalFib(c.day) >= c.settings.fiberGoal },
 ];
 
@@ -1094,8 +1094,8 @@ function buildBriefing(yds, history, settings) {
     const stepsHit = rec.s >= settings.stepGoal;
     if (rec.e > 0) facts.push(`🧾 ${rec.e} item${rec.e === 1 ? "" : "s"} logged · ${rec.c.toLocaleString()} cal${onPlan ? " — on plan" : ""}`);
     if (rec.s > 0) facts.push(`👟 ${rec.s.toLocaleString()} steps${stepsHit ? " — goal hit" : ` of ${settings.stepGoal.toLocaleString()}`}`);
-    if ((rec.p || 0) >= settings.proteinGoal) facts.push(`💪 protein goal cleared (${rec.p}g)`);
-    if ((rec.f || 0) >= settings.fiberGoal) facts.push(`🥦 fiber goal cleared (${rec.f}g)`);
+    if ((rec.p || 0) >= settings.proteinGoal) facts.push(`protein goal cleared (${rec.p}g)`);
+    if ((rec.f || 0) >= settings.fiberGoal) facts.push(`fiber goal cleared (${rec.f}g)`);
 
     if (onPlan && stepsHit) {
       headline = pick(["Yesterday: flawless execution.", "The verdict is in: chef's kiss.", "Yesterday ran like a courtroom drama where you win."], "h");
@@ -1148,6 +1148,126 @@ function buildBriefing(yds, history, settings) {
 /* ---------- the weekend burrito: fills as the pool gets eaten ----------
    Anatomy: open cut end at the left (cross-section with visible filling),
    wrapped body with tortilla folds, tucked foil-free tail at the right. */
+/* ---------- little sticker icons (SVG, ink outlines — no emoji) ---------- */
+const INK_ICON = "#1E1A1C";
+function ProteinIcon({ size = 14 }) {
+  /* drumstick */
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ verticalAlign: "-2px" }}>
+      <path d="M14.5 3.5 a 6.2 6.2 0 0 1 4.6 9.3 c -1.8 2.8 -5 3.4 -7.5 2.2 L 8 18.6 a 2.1 2.1 0 1 1 -2.9 -2.9 A 2.1 2.1 0 1 1 8.4 13 l 3 -3.4 c -1 -2.6 0 -5 3.1 -6.1 Z"
+        fill="#FF9F6B" stroke={INK_ICON} strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M13.5 7.5 a 3.4 3.4 0 0 1 4 2" fill="none" stroke="#FFF7E6" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+function FiberIcon({ size = 14 }) {
+  /* leaf */
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ verticalAlign: "-2px" }}>
+      <path d="M19 4 C 11 4 5.5 8 5 15.5 c -0.1 2 0.7 3.5 2.5 3.5 C 15 19 19.5 12 19 4 Z"
+        fill="#7ED957" stroke={INK_ICON} strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M7.5 17.5 C 10 13 13.5 9.5 17 7" fill="none" stroke="#3E8E2A" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/* ---------- Pours: one-tap drink logging, each a sticker illustration ---------- */
+const POURS = [
+  { id: "beer", name: "beer", label: "Beer", cal: 145 },
+  { id: "lightbeer", name: "light beer", label: "Light beer", cal: 100 },
+  { id: "wine", name: "wine", label: "Wine", cal: 125 },
+  { id: "marg", name: "margarita", label: "Marg", cal: 250 },
+  { id: "martini", name: "martini", label: "Martini", cal: 200 },
+  { id: "oldfash", name: "old fashioned", label: "Old fash", cal: 200 },
+  { id: "seltzer", name: "seltzer", label: "Seltzer", cal: 100 },
+  { id: "shot", name: "shot", label: "Shot", cal: 100 },
+];
+
+function DrinkIcon({ kind, size = 38 }) {
+  const S = { stroke: INK_ICON, strokeWidth: 2.4, strokeLinejoin: "round" };
+  const art = {
+    beer: (
+      <g>
+        <rect x="12" y="16" width="19" height="24" rx="4" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <path d="M31 21 h 4 a 3.5 3.5 0 0 1 3.5 3.5 v 5 a 3.5 3.5 0 0 1 -3.5 3.5 h -4" fill="none" {...S} />
+        <rect x="12" y="16" width="19" height="24" rx="4" fill="#F0A800" {...S} />
+        <path d="M16 22 v 13" stroke="#FFC93C" strokeWidth="3.4" strokeLinecap="round" />
+        <circle cx="15" cy="14" r="4.4" fill="#FFF" {...S} />
+        <circle cx="22" cy="12.4" r="5" fill="#FFF" {...S} />
+        <circle cx="28.6" cy="14.4" r="4.2" fill="#FFF" {...S} />
+      </g>
+    ),
+    lightbeer: (
+      <g>
+        <rect x="15" y="10" width="16" height="30" rx="4" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <rect x="15" y="10" width="16" height="30" rx="4" fill="#7ED957" {...S} />
+        <rect x="15" y="10" width="16" height="6.5" rx="3" fill="#C9CFD9" {...S} />
+        <rect x="17.5" y="21" width="11" height="10" rx="2.5" fill="#FFF7E6" stroke={INK_ICON} strokeWidth="1.8" />
+        <path d="M20 26 h 6" stroke={INK_ICON} strokeWidth="1.8" strokeLinecap="round" />
+      </g>
+    ),
+    wine: (
+      <g>
+        <path d="M14 8 h 16 c 0.5 8 -2.5 13 -8 13 s -8.5 -5 -8 -13 Z" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <path d="M14 8 h 16 c 0.5 8 -2.5 13 -8 13 s -8.5 -5 -8 -13 Z" fill="#FFF" {...S} />
+        <path d="M14.6 13 c 0.4 5 3 8 7.4 8 s 7 -3 7.4 -8 Z" fill="#E0426E" stroke={INK_ICON} strokeWidth="1.6" />
+        <path d="M22 21 v 12" {...S} />
+        <path d="M15 37 h 14" fill="none" {...S} strokeLinecap="round" />
+      </g>
+    ),
+    marg: (
+      <g>
+        <path d="M10 10 h 24 l -9 10 v 11 h -6 V 20 Z" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <path d="M10 10 h 24 l -9 10 v 11 h -6 V 20 Z" fill="#FFF" {...S} />
+        <path d="M12.6 12.5 h 18.8 l -7 7.8 h -4.8 Z" fill="#7ED957" stroke={INK_ICON} strokeWidth="1.6" />
+        <circle cx="33" cy="11" r="4.6" fill="#7ED957" {...S} />
+        <path d="M33 7 v 8 M 29.4 11 h 7.2" stroke="#FFF7E6" strokeWidth="1.4" />
+        <path d="M14 34 h 16" fill="none" {...S} strokeLinecap="round" />
+        <circle cx="12" cy="9" r="1.2" fill={INK_ICON} /><circle cx="17" cy="8" r="1.2" fill={INK_ICON} /><circle cx="27" cy="8" r="1.2" fill={INK_ICON} />
+      </g>
+    ),
+    martini: (
+      <g>
+        <path d="M10 9 h 24 L 22 22 Z" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <path d="M10 9 h 24 L 22 22 Z" fill="#EDF0F4" {...S} />
+        <path d="M22 22 v 11" {...S} />
+        <path d="M15 37 h 14" fill="none" {...S} strokeLinecap="round" />
+        <path d="M18 12 l 8 3" stroke={INK_ICON} strokeWidth="1.6" strokeLinecap="round" />
+        <circle cx="26.5" cy="14.5" r="3.2" fill="#7ED957" {...S} strokeWidth="1.8" />
+        <circle cx="26.5" cy="14.5" r="1.1" fill="#FF6B6B" />
+      </g>
+    ),
+    oldfash: (
+      <g>
+        <rect x="13" y="12" width="20" height="26" rx="3.5" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <rect x="13" y="12" width="20" height="26" rx="3.5" fill="#FFF" {...S} />
+        <path d="M14.6 22 h 16.8 v 12.5 a 3 3 0 0 1 -3 3 h -10.8 a 3 3 0 0 1 -3 -3 Z" fill="#F0A800" stroke={INK_ICON} strokeWidth="1.6" />
+        <rect x="18" y="24" width="7.5" height="7.5" rx="1.5" fill="#FFF7E6" stroke={INK_ICON} strokeWidth="1.6" transform="rotate(-8 21.7 27.7)" opacity=".92" />
+        <circle cx="29" cy="12" r="4.6" fill="#FF9F3C" {...S} strokeWidth="1.8" />
+        <circle cx="29" cy="12" r="2" fill="#FFC93C" stroke={INK_ICON} strokeWidth="1" />
+      </g>
+    ),
+    seltzer: (
+      <g>
+        <rect x="15" y="10" width="16" height="30" rx="4" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <rect x="15" y="10" width="16" height="30" rx="4" fill="#FF5FA2" {...S} />
+        <rect x="15" y="10" width="16" height="6.5" rx="3" fill="#C9CFD9" {...S} />
+        <circle cx="20" cy="23" r="1.7" fill="#FFF" /><circle cx="26" cy="27" r="2.1" fill="#FFF" />
+        <circle cx="21" cy="32" r="1.5" fill="#FFF" /><circle cx="26.5" cy="35" r="1.3" fill="#FFF" />
+      </g>
+    ),
+    shot: (
+      <g>
+        <path d="M16 18 h 12 l -1.6 18 h -8.8 Z" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <path d="M16 18 h 12 l -1.6 18 h -8.8 Z" fill="#FFF" {...S} />
+        <path d="M17 25 h 10 l -1 11 h -8 Z" fill="#FFC93C" stroke={INK_ICON} strokeWidth="1.6" />
+        <path d="M14 14 l 3.5 -3.5 M 18 15.5 l 2 -2" stroke={INK_ICON} strokeWidth="1.6" strokeLinecap="round" />
+      </g>
+    ),
+  };
+  return <svg width={size} height={size} viewBox="0 0 46 46" aria-hidden="true">{art[kind]}</svg>;
+}
+
 function BurritoMeter({ eaten, max }) {
   const pct = Math.max(0, Math.min(100, (eaten / Math.max(1, max)) * 100));
   const over = eaten > max;
@@ -2098,8 +2218,8 @@ function Streakhouse() {
     if (wLogged) { xp += 10; lines.push({ t: "Weigh-in", v: 10 }); }
     const pHit = totalProt(d) >= settings.proteinGoal;
     const fHit = totalFib(d) >= settings.fiberGoal;
-    if (pHit) { xp += 15; lines.push({ t: "💪 Protein goal", v: 15 }); }
-    if (fHit) { xp += 15; lines.push({ t: "🥦 Fiber goal", v: 15 }); }
+    if (pHit) { xp += 15; lines.push({ t: "Protein goal", v: 15 }); }
+    if (fHit) { xp += 15; lines.push({ t: "Fiber goal", v: 15 }); }
     if (pHit && fHit) { xp += 10; lines.push({ t: "Macro Sweep", v: 10 }); }
     if (comeback) { xp += 40; lines.push({ t: "COMEBACK", v: 40 }); }
 
@@ -2288,8 +2408,8 @@ function Streakhouse() {
             {listening && <div className="note">Listening… speak the meal, tap ◼ when done.</div>}
             <div className="row">
               <input inputMode="numeric" value={calInput} onChange={(e) => setCalInput(e.target.value)} placeholder="cal" aria-label="Calories" />
-              <input inputMode="numeric" value={protInput} onChange={(e) => setProtInput(e.target.value)} placeholder="💪g" aria-label="Protein grams" />
-              <input inputMode="numeric" value={fibInput} onChange={(e) => setFibInput(e.target.value)} placeholder="🥦g" aria-label="Fiber grams" />
+              <input inputMode="numeric" value={protInput} onChange={(e) => setProtInput(e.target.value)} placeholder="prot g" aria-label="Protein grams" />
+              <input inputMode="numeric" value={fibInput} onChange={(e) => setFibInput(e.target.value)} placeholder="fiber g" aria-label="Fiber grams" />
             </div>
             <div className="row">
               <button className="ember" style={{ flex: 1 }} onClick={estimate} disabled={estimating || !desc.trim()}>{estimating ? "consulting the snack actuary…" : "Estimate"}</button>
@@ -2307,8 +2427,8 @@ function Streakhouse() {
                     </div>
                     <div className="row" style={{ marginTop: 6 }}>
                       <input inputMode="numeric" value={it.cal} onChange={(e) => setEstimateItem(it.id, "cal", e.target.value)} placeholder="cal" aria-label={`Calories for ${it.raw}`} />
-                      <input inputMode="numeric" value={it.p} onChange={(e) => setEstimateItem(it.id, "p", e.target.value)} placeholder="💪g" aria-label={`Protein for ${it.raw}`} />
-                      <input inputMode="numeric" value={it.f} onChange={(e) => setEstimateItem(it.id, "f", e.target.value)} placeholder="🥦g" aria-label={`Fiber for ${it.raw}`} />
+                      <input inputMode="numeric" value={it.p} onChange={(e) => setEstimateItem(it.id, "p", e.target.value)} placeholder="prot g" aria-label={`Protein for ${it.raw}`} />
+                      <input inputMode="numeric" value={it.f} onChange={(e) => setEstimateItem(it.id, "f", e.target.value)} placeholder="fiber g" aria-label={`Fiber for ${it.raw}`} />
                     </div>
                     <div className="estnote">"{it.raw}" · {it.note}</div>
                   </div>
@@ -2337,8 +2457,8 @@ function Streakhouse() {
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
                   <input inputMode="numeric" value={labelForm.cal} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { cal: e.target.value }))} placeholder="cal / serving" aria-label="Calories per serving" />
-                  <input inputMode="decimal" value={labelForm.p} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { p: e.target.value }))} placeholder="💪g" aria-label="Protein grams per serving" />
-                  <input inputMode="decimal" value={labelForm.f} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { f: e.target.value }))} placeholder="🥦g" aria-label="Fiber grams per serving" />
+                  <input inputMode="decimal" value={labelForm.p} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { p: e.target.value }))} placeholder="prot g" aria-label="Protein grams per serving" />
+                  <input inputMode="decimal" value={labelForm.f} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { f: e.target.value }))} placeholder="fiber g" aria-label="Fiber grams per serving" />
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
                   <input inputMode="decimal" value={labelForm.g} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { g: e.target.value }))} placeholder="serving size (g or ml, optional)" aria-label="Serving size in grams or milliliters" />
@@ -2404,8 +2524,8 @@ function Streakhouse() {
                     </div>
                     <div className="row" style={{ marginTop: 6 }}>
                       <input inputMode="numeric" value={editEntry.cal} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { cal: ev.target.value }))} placeholder="cal" aria-label="Edit calories" />
-                      <input inputMode="numeric" value={editEntry.p} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { p: ev.target.value }))} placeholder="💪g" aria-label="Edit protein" />
-                      <input inputMode="numeric" value={editEntry.f} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { f: ev.target.value }))} placeholder="🥦g" aria-label="Edit fiber" />
+                      <input inputMode="numeric" value={editEntry.p} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { p: ev.target.value }))} placeholder="prot g" aria-label="Edit protein" />
+                      <input inputMode="numeric" value={editEntry.f} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { f: ev.target.value }))} placeholder="fiber g" aria-label="Edit fiber" />
                     </div>
                     <div className="row" style={{ marginTop: 6 }}>
                       <button className="pri" style={{ flex: 1 }} onClick={saveEditEntry} disabled={!editEntry.name.trim() || isNaN(parseInt(editEntry.cal, 10))}>Save</button>
@@ -2416,7 +2536,7 @@ function Streakhouse() {
                   <div className="entry" key={e.id}>
                     <span className="nm">
                       {e.name}
-                      {(e.p || e.f) ? <span className="entrymacros num">💪{e.p || 0} 🥦{e.f || 0}</span> : null}
+                      {(e.p || e.f) ? <span className="entrymacros num"><ProteinIcon size={11} />{e.p || 0} <FiberIcon size={11} />{e.f || 0}</span> : null}
                     </span>
                     <span className="actions">
                       <span className="cal num">{e.cal}</span>
@@ -2431,11 +2551,29 @@ function Streakhouse() {
           </div>
 
           <div className="card">
+            <h2>Pours</h2>
+            <div className="sub">One tap logs the drink straight to today's count (and the weekend pool). The snack judge sees everything.</div>
+            <div className="pours">
+              {POURS.map((d) => {
+                const n = day.entries.filter((en) => en.name === d.name).length;
+                return (
+                  <button key={d.id} className="pourbtn" disabled={day.closed} onClick={() => addEntry(d.name, d.cal)} aria-label={`Log a ${d.name}, ${d.cal} calories`}>
+                    {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
+                    <DrinkIcon kind={d.id} />
+                    <span className="pl">{d.label}</span>
+                    <span className="pc num">{d.cal}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="card">
             <h2>Power-ups</h2>
             <div className="macrorow">
               <span className="micons" aria-hidden="true">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <span key={i} style={{ opacity: totP >= ((i + 1) / 5) * settings.proteinGoal ? 1 : 0.22 }}>💪</span>
+                  <span key={i} style={{ opacity: totP >= ((i + 1) / 5) * settings.proteinGoal ? 1 : 0.22 }}><ProteinIcon size={18} /></span>
                 ))}
               </span>
               <div>
@@ -2446,7 +2584,7 @@ function Streakhouse() {
             <div className="macrorow">
               <span className="micons" aria-hidden="true">
                 {Array.from({ length: 5 }).map((_, i) => (
-                  <span key={i} style={{ opacity: totF >= ((i + 1) / 5) * settings.fiberGoal ? 1 : 0.22 }}>🥦</span>
+                  <span key={i} style={{ opacity: totF >= ((i + 1) / 5) * settings.fiberGoal ? 1 : 0.22 }}><FiberIcon size={18} /></span>
                 ))}
               </span>
               <div>
@@ -2712,10 +2850,10 @@ function Streakhouse() {
             <div className="row" style={{ marginTop: 4 }}><input inputMode="numeric" value={calDraft} onChange={(e) => setCalDraft(e.target.value)} placeholder="Daily calorie target" aria-label="Calorie target" /></div>
             <div className="qdesc" style={{ marginTop: 10 }}>Step goal</div>
             <div className="row" style={{ marginTop: 4 }}><input inputMode="numeric" value={stepDraft} onChange={(e) => setStepDraft(e.target.value)} placeholder="Step goal" aria-label="Step goal" /></div>
-            <div className="qdesc" style={{ marginTop: 10 }}>💪 Protein and 🥦 fiber goals (grams)</div>
+            <div className="qdesc" style={{ marginTop: 10 }}><ProteinIcon size={13} /> Protein and <FiberIcon size={13} /> fiber goals (grams)</div>
             <div className="row" style={{ marginTop: 4 }}>
-              <input inputMode="numeric" value={protDraft} onChange={(e) => setProtDraft(e.target.value)} placeholder="💪 Protein (g)" aria-label="Protein goal in grams" />
-              <input inputMode="numeric" value={fibDraft} onChange={(e) => setFibDraft(e.target.value)} placeholder="🥦 Fiber (g)" aria-label="Fiber goal in grams" />
+              <input inputMode="numeric" value={protDraft} onChange={(e) => setProtDraft(e.target.value)} placeholder="Protein (g)" aria-label="Protein goal in grams" />
+              <input inputMode="numeric" value={fibDraft} onChange={(e) => setFibDraft(e.target.value)} placeholder="Fiber (g)" aria-label="Fiber goal in grams" />
             </div>
             <div className="qname" style={{ marginTop: 16 }}>Weekend budgeting</div>
             <div className="qdesc">Run Mon–Thu leaner and pre-fund the Fri–Sun pool. The weekly total stays the same.</div>
@@ -2903,6 +3041,14 @@ function Streakhouse() {
         .quip { background:#FFD6E8; border:2px solid #7C48D8; border-radius:14px; padding:10px 14px; margin-top:12px; transform:rotate(-.4deg); }
         .quip .ql { font-size:9px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; color:#7C48D8; }
         .quip .qt { font-size:13px; font-weight:800; margin-top:2px; line-height:1.35; }
+        .pours { display:grid; grid-template-columns:repeat(4,1fr); gap:12px 10px; margin-top:12px; }
+        button.pourbtn { position:relative; background:#fff; border:2.5px solid #1E1A1C; border-radius:14px; box-shadow:3px 3px 0 #1E1A1C; padding:7px 2px 5px; display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; font-family:inherit; }
+        button.pourbtn:hover { transform:translate(-1px,-1px); box-shadow:4px 4px 0 #1E1A1C; }
+        button.pourbtn:active { transform:translate(3px,3px); box-shadow:0 0 0 #1E1A1C; }
+        button.pourbtn:disabled { opacity:.45; }
+        .pourbtn .pl { font-size:10px; font-weight:800; letter-spacing:.2px; color:#1E1A1C; line-height:1.1; }
+        .pourbtn .pc { font-size:9px; color:#5C5254; }
+        .pourbadge { position:absolute; top:-9px; right:-9px; background:#FF5FA2; color:#1E1A1C; border:2px solid #1E1A1C; border-radius:999px; min-width:21px; height:21px; padding:0 4px; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; box-shadow:2px 2px 0 #1E1A1C; }
         .estitem { background:#FAF3E7; border:2.5px dashed #1E1A1C; border-radius:14px; padding:10px; margin-top:10px; }
         .estitem input { background:#fff; }
         .estnote { font-size:11px; color:#5C5254; font-weight:800; margin-top:6px; }
@@ -3021,7 +3167,7 @@ function Streakhouse() {
               <div className="xpline"><span>Avg daily calories</span><span className="num">{weeklyReview.avgCal.toLocaleString()}</span></div>
               <div className="xpline"><span>Days on plan</span><span className="num">{weeklyReview.onPlanDays}</span></div>
               <div className="xpline"><span>Total steps</span><span className="num">{weeklyReview.steps.toLocaleString()} · goal hit {weeklyReview.stepDays}×</span></div>
-              <div className="xpline"><span>💪 protein / 🥦 fiber days</span><span className="num">{weeklyReview.protDays} / {weeklyReview.fibDays}</span></div>
+              <div className="xpline"><span><ProteinIcon size={12} /> protein / <FiberIcon size={12} /> fiber days</span><span className="num">{weeklyReview.protDays} / {weeklyReview.fibDays}</span></div>
               {weeklyReview.wDelta !== null && (
                 <div className="xpline"><span>Weight over the week</span><span className="num" style={{ color: weeklyReview.wDelta <= 0 ? "#52B52E" : "#5C5254" }}>{weeklyReview.wDelta > 0 ? "+" : ""}{weeklyReview.wDelta}</span></div>
               )}
@@ -3032,8 +3178,8 @@ function Streakhouse() {
               <input inputMode="numeric" value={stepDraft} onChange={(e) => setStepDraft(e.target.value)} placeholder="steps" aria-label="Step goal" />
             </div>
             <div className="row" style={{ marginTop: 6 }}>
-              <input inputMode="numeric" value={protDraft} onChange={(e) => setProtDraft(e.target.value)} placeholder="💪g" aria-label="Protein goal in grams" />
-              <input inputMode="numeric" value={fibDraft} onChange={(e) => setFibDraft(e.target.value)} placeholder="🥦g" aria-label="Fiber goal in grams" />
+              <input inputMode="numeric" value={protDraft} onChange={(e) => setProtDraft(e.target.value)} placeholder="prot g" aria-label="Protein goal in grams" />
+              <input inputMode="numeric" value={fibDraft} onChange={(e) => setFibDraft(e.target.value)} placeholder="fiber g" aria-label="Fiber goal in grams" />
             </div>
             <div className="row" style={{ marginTop: 6 }}>
               <select value={boostDraft} onChange={(e) => setBoostDraft(e.target.value)} aria-label="Weekend boost">

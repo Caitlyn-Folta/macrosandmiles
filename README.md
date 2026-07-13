@@ -20,7 +20,9 @@ PWA install config
 icon-192.png, icon-512.png
 App icons
 
-Design system. The visual language follows the Macros & Miles design system (modern 90s bubble-sticker: candy brights on warm cream, ink outlines, hard offset sticker shadows, Titan One display / Baloo 2 body / Space Mono stats, ink text on all candy colors, halftone dot texture). Tokens are applied directly as hex values in index.html's style block. One deliberate deviation: the app keeps its emoji (power-ups, quests, snack judge) even though the design system reserves fun for stickers — they're load-bearing content here.
+Design system. The visual language follows the Macros & Miles design system (modern 90s bubble-sticker: candy brights on warm cream, ink outlines, hard offset sticker shadows, Titan One display / Baloo 2 body / Space Mono stats, ink text on all candy colors, halftone dot texture). Tokens are applied directly as hex values in index.html's style block. Protein, fiber, and the Pours drinks all use hand-drawn SVG sticker icons (ProteinIcon/FiberIcon/DrinkIcon in index.html) rather than emoji; the remaining emoji (snack judge, quests) are load-bearing content.
+
+Pours. A one-tap drink logger on the today tab: eight sticker-style drink icons (beer, light beer, wine, margarita, martini, old fashioned, seltzer, shot) with per-serving calories from the built-in table. Tapping logs the drink as a normal entry (editable/deletable like any other, counts toward the day and the weekend pool), and a badge on each icon shows today's count. The 3+-drinks data-reactive humor triggers pick these up like typed entries.
 
 Rules to remember
 After editing index.html, food-db.js, or humor-bank.js, bump the cache version in sw.js. Change mm-v1 to mm-v2 (then v3, and so on) and commit both. If you skip this, phones keep serving the old cached version. The app auto-reloads once when a new service worker takes control, so updates land on the same open — but only if the cache version was bumped.
