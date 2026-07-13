@@ -84,13 +84,16 @@ const GENERIC_REACTIONS = [
   "Precedent set: you log things. Case law loves consistency.",
 ];
 const FOOD_REACTIONS = [
-  { match: (c) => /beer|wine|margarita|cocktail|seltzer|tequila|vodka|whiskey|modelo|michelob|mimosa|sangria|spritz|claw|prosecco|champagne/.test(c.names), lines: [
+  /* alcohol quips run Fri-Sun only, and lean into moderation as the win */
+  { match: (c) => [0, 5, 6].includes(new Date().getDay()) && /beer|wine|margarita|martini|old fashioned|cocktail|seltzer|tequila|vodka|whiskey|modelo|michelob|mimosa|sangria|spritz|claw|prosecco|champagne|shot/.test(c.names), lines: [
     "Logged in real time, not reconstructed from vibes tomorrow. The court admires the honesty.",
     "Cheers. The ledger stays sober so you don't have to.",
     "Entered into evidence before the second round. Professional.",
     "The pool math already budgeted for fun. Proceed as planned.",
     "One drink on the record beats three forgotten ones. The bartender and science agree.",
     "Count the pours, win the weekend. You're literally doing the quest.",
+    "Sipped, savored, logged. Pacing like this is why the burrito lasts all weekend.",
+    "On the record and in no hurry. Moderation looks good on the ledger.",
   ]},
   { match: (c) => /coffee|latte|espresso|americano|cappuccino|cold brew|macchiato/.test(c.names), lines: [
     "Caffeine: the only witness that never needs coaxing.",
@@ -191,7 +194,7 @@ function mealQuipFor(added, priorCount) {
 const CONFESSION_LINES = [
   { id: "conf-01", text: "Was today perfect? No. Is perfect required? Also no." },
   { id: "conf-02", text: "Did the weekend go according to plan? No. Was there ever a plan? Also no." },
-  { id: "conf-03", text: "Are you drinking rosé earlier than you probably should? Yes. Is anyone stopping you? Also no." },
+  { id: "conf-03", text: "Are you drinking rosé earlier than you probably should? Yes. Is anyone stopping you? Also no." , alc: true },
   { id: "conf-04", text: "Did you eat a vegetable today? Debatable. Does debatable count? We're going with yes." },
   { id: "conf-05", text: "Was that a reasonable portion? No. Was it delicious? Also no — it was incredible, actually." },
   { id: "conf-06", text: "Did you plan to have dessert? No. Did dessert have other plans? Apparently." },
@@ -201,12 +204,12 @@ const CONFESSION_LINES = [
 
 const OFFICIAL_LINES = [
   { id: "off-01", text: "OFFICIAL NOTICE: Streak terminated. Effective immediately. No further action required." },
-  { id: "off-02", text: "MEMO: Patio season rosé between 4–7pm is hereby reclassified as ambiance, not a decision." },
+  { id: "off-02", text: "MEMO: Patio season rosé between 4–7pm is hereby reclassified as ambiance, not a decision." , alc: true },
   { id: "off-03", text: "You have reached Level {level}. This entitles you to nothing except knowing the number." },
   { id: "off-04", text: "NOTICE OF REST DAY SHIELD DEPLOYMENT: Streak preserved by executive order. You're welcome." },
   { id: "off-05", text: "ADVISORY: Weekend calorie bank is now open for business. Spend accordingly." },
   { id: "off-06", text: "BULLETIN: A new personal record has been logged. No ceremony will be held." },
-  { id: "off-07", text: "PUBLIC NOTICE: Margarita has been reclassified as a seasonal vegetable, beach-adjacent subtype." },
+  { id: "off-07", text: "PUBLIC NOTICE: Margarita has been reclassified as a seasonal vegetable, beach-adjacent subtype." , alc: true },
   { id: "off-08", text: "STATEMENT: The chip-to-dip ratio observed today has been noted and will not be discussed further." },
   { id: "off-09", text: "DECREE: As of this login, all guilt regarding weekend brunch is hereby waived." },
 ];
@@ -215,15 +218,15 @@ const OFFICIAL_LINES = [
 const OFFICIAL_CONTEXT_ONLY = new Set(["off-01", "off-04"]);
 
 const DEADPAN_LINES = [
-  { id: "dead-01", text: "3 drinks in, everyone becomes a cardio expert." },
-  { id: "dead-02", text: "Beach margs are a constitutional right. Drink 4 is a choice you're making alone." },
-  { id: "dead-03", text: "Nobody's ever regretted stopping at 2." },
+  { id: "dead-01", text: "3 drinks in, everyone becomes a cardio expert." , alc: true },
+  { id: "dead-02", text: "Beach margs are a constitutional right. Drink 4 is a choice you're making alone." , alc: true },
+  { id: "dead-03", text: "Nobody's ever regretted stopping at 2." , alc: true },
   { id: "dead-04", text: "Chips and queso have never once been a mistake. This message has been fact-checked." },
-  { id: "dead-05", text: "Rosé doesn't count against you on a patio. This is science, probably." },
+  { id: "dead-05", text: "Rosé doesn't count against you on a patio. This is science, probably." , alc: true },
   { id: "dead-06", text: "The bread basket was always going to win. It wins every time." },
-  { id: "dead-07", text: "Drink 3 is when the group starts planning a trip nobody will take." },
+  { id: "dead-07", text: "Drink 3 is when the group starts planning a trip nobody will take." , alc: true },
   { id: "dead-08", text: "A salad next to fries is still mostly a salad." },
-  { id: "dead-09", text: "Holiday bevies exist outside the normal rules. Everyone knows this." },
+  { id: "dead-09", text: "Holiday bevies exist outside the normal rules. Everyone knows this." , alc: true },
   { id: "dead-10", text: "Second helpings are just enthusiasm with extra steps." },
 ];
 
@@ -238,9 +241,10 @@ const DATA_REACTIVE_LINES = {
     { id: "dr-nodinner-02", text: "No dinner yet. Living dangerously or just busy — either way, noted." },
   ],
   threePlusDrinks: [
-    { id: "dr-drinks-01", text: "Drink 3 logged. This is where the good decisions clock out. Proceed accordingly." },
-    { id: "dr-drinks-02", text: "Fourth drink noted. Hydrate like you mean it." },
-    { id: "dr-drinks-03", text: "Drink count hit 3. History suggests this is the tipping point. History is usually right." },
+    { id: "dr-drinks-01", text: "Drink 3, logged like a professional. A water between rounds is the real power move — tomorrow's briefing will rave about it." },
+    { id: "dr-drinks-02", text: "Third pour on the record. You're driving the night, not the other way around — a glass of water keeps it that way." },
+    { id: "dr-drinks-03", text: "Three in and still logging honestly. That's the moderation muscle flexing — close the tab whenever, the ledger's proud either way." },
+    { id: "dr-drinks-04", text: "Round three noted. Pacing is the flex nobody photographs but everybody feels tomorrow." },
   ],
   overBudgetWithinPool: [
     { id: "dr-overpool-01", text: "Over today, covered by the bank. The math still works. Nobody's calling about it." },
@@ -282,13 +286,13 @@ const SEASONAL_WINDOWS = {
 
 const SEASONAL_LINES = {
   springSummer: [
-    { id: "sea-ss-01", text: "Rosé o'clock arrived early today. The patio doesn't judge." },
+    { id: "sea-ss-01", text: "Rosé o'clock arrived early today. The patio doesn't judge." , alc: true },
     { id: "sea-ss-02", text: "BBQ season means everything is technically a vegetable if it was near the grill." },
-    { id: "sea-ss-03", text: "Beach margs are a constitutional right. Drink 4 is a choice you're making alone." },
-    { id: "sea-ss-04", text: "Patio rosé between 4–7pm is hereby reclassified as ambiance, not a decision." },
-    { id: "sea-ss-05", text: "Rosé's back on the patio. Feels right for the season." },
+    { id: "sea-ss-03", text: "Beach margs are a constitutional right. Drink 4 is a choice you're making alone." , alc: true },
+    { id: "sea-ss-04", text: "Patio rosé between 4–7pm is hereby reclassified as ambiance, not a decision." , alc: true },
+    { id: "sea-ss-05", text: "Rosé's back on the patio. Feels right for the season." , alc: true },
     { id: "sea-ss-06", text: "Grilled corn with butter is a side dish. This is not up for debate." },
-    { id: "sea-ss-07", text: "Sunscreen: applied. Margarita: also applied. Priorities in order." },
+    { id: "sea-ss-07", text: "Sunscreen: applied. Margarita: also applied. Priorities in order." , alc: true },
   ],
   fall: [
     { id: "sea-fall-01", text: "Halloween candy inventory has been logged. Quality control is ongoing." },
@@ -298,15 +302,15 @@ const SEASONAL_LINES = {
   ],
   winterHolidays: [
     { id: "sea-wh-01", text: "It's a holiday. The bank exists for exactly this week." },
-    { id: "sea-wh-02", text: "Eggnog has been logged. Bold, seasonal, correct." },
+    { id: "sea-wh-02", text: "Eggnog has been logged. Bold, seasonal, correct." , alc: true },
     { id: "sea-wh-03", text: "Thanksgiving plate achieved architectural levels of ambition. Respect." },
-    { id: "sea-wh-04", text: "NYE bevies noted. Drink 3 rules still apply, resolutions start tomorrow." },
+    { id: "sea-wh-04", text: "NYE bevies noted. Drink 3 rules still apply, resolutions start tomorrow." , alc: true },
     { id: "sea-wh-05", text: "Cookie exchange haul logged. This is basically a harvest festival." },
     { id: "sea-wh-06", text: "Holiday party appetizers: consumed with commitment. As intended." },
   ],
   valentines: [
     { id: "sea-vd-01", text: "Chocolate logged on the one day it's basically mandatory." },
-    { id: "sea-vd-02", text: "Date night wine doesn't count against you today. Everyone agrees on this." },
+    { id: "sea-vd-02", text: "Date night wine doesn't count against you today. Everyone agrees on this." , alc: true },
   ],
   julyFourth: [
     { id: "sea-jf-01", text: "Fireworks-adjacent eating detected. Completely normal for the holiday." },
@@ -337,10 +341,10 @@ const FORTIES_LINES = [
   { id: "forty-03", text: "NOTICE: You have officially reached the age where 'I'll deal with it tomorrow' actually happens tomorrow, at a specific time, with consequences." },
   { id: "forty-04", text: "Wine used to be a Tuesday thing. Now Tuesday needs advance notice." },
   { id: "forty-05", text: "You read the nutrition label unprompted. Nobody made you. Growth." },
-  { id: "forty-06", text: "You did the math on how many drinks equal one recovery day. Very 40s of you." },
+  { id: "forty-06", text: "You did the math on how many drinks equal one recovery day. Very 40s of you." , alc: true },
   { id: "forty-07", text: "Bedtime moved up an hour and nobody even negotiated. It just happened." },
   { id: "forty-08", text: "You said 'I can't eat like that anymore' out loud, unprompted, to no one. Welcome." },
-  { id: "forty-09", text: "Two drinks in, you're already thinking about tomorrow's plans. Mature. Slightly annoying. Correct." },
+  { id: "forty-09", text: "Two drinks in, you're already thinking about tomorrow's plans. Mature. Slightly annoying. Correct." , alc: true },
 ];
 
 const PERI_LINES = [
@@ -372,6 +376,12 @@ function getActiveSeasonalLines(date = new Date()) {
   return active;
 }
 
+/* alcohol-flavored lines only run Fri-Sun */
+function dropAlcOffWeekend(pool, date) {
+  const wknd = [0, 5, 6].includes(date.getDay());
+  return wknd ? pool : pool.filter((l) => !l.alc);
+}
+
 function pickRandomLine(pool, lastId) {
   if (!pool || pool.length === 0) return null;
   const eligible = pool.length > 1 ? pool.filter((l) => l.id !== lastId) : pool;
@@ -387,7 +397,7 @@ function pickLine(category, { storage = window.localStorage, date = new Date(), 
     const isCoreCategory = category === "confession" || category === "official" || category === "deadpan" || category === "classic";
     if (allowEasterEgg && isCoreCategory && Math.random() < EASTER_EGG_CHANCE) {
       const eggKey = "lastShownLineId:easterEgg";
-      const chosenEgg = pickRandomLine(EASTER_EGG_LINES, storage.getItem(eggKey));
+      const chosenEgg = pickRandomLine(dropAlcOffWeekend(EASTER_EGG_LINES, date), storage.getItem(eggKey));
       if (chosenEgg) { storage.setItem(eggKey, chosenEgg.id); return chosenEgg; }
     }
 
@@ -403,7 +413,7 @@ function pickLine(category, { storage = window.localStorage, date = new Date(), 
       pool = includeSeasonal && category !== "classic" ? base.concat(getActiveSeasonalLines(date)) : base;
     }
 
-    const chosen = pickRandomLine(pool, lastId);
+    const chosen = pickRandomLine(dropAlcOffWeekend(pool, date), lastId);
     if (chosen) storage.setItem(storageKey, chosen.id);
     return chosen;
   } catch { return null; }
