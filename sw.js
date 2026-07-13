@@ -1,6 +1,6 @@
 /* Macros & Miles service worker — bump CACHE version when you change
    index.html, food-db.js, or humor-bank.js */
-const CACHE = "mm-v24";
+const CACHE = "mm-v25";
 
 const ASSETS = [
   "./",
