@@ -587,13 +587,26 @@ function mergeDayRaw(aRaw, bRaw) {
   if (!a) return bRaw; if (!b) return aRaw;
   /* keep local entry order and append what only the remote has — a merge
      where the remote is a subset must equal the local doc exactly, or every
-     sync would read as a change and trigger a refresh */
+     sync would read as a change and trigger a refresh. Per entry, the side
+     with the newer modified-at (m) wins, so edits propagate; tombstones
+     (del) union so deletions don't resurrect. */
+  const del = [...new Set([...(a.del || []), ...(b.del || [])])];
+  const delSet = new Set(del);
+  const remoteById = {};
+  for (const e of (b.entries || [])) remoteById[e.id] = e;
   const seen = new Set((a.entries || []).map((e) => e.id));
-  const entries = [...(a.entries || []), ...(b.entries || []).filter((e) => !seen.has(e.id)).sort((x, y) => (x.id > y.id ? 1 : -1))];
+  const entries = [
+    ...(a.entries || []).map((e) => {
+      const r = remoteById[e.id];
+      return r && (r.m || 0) > (e.m || 0) ? r : e;
+    }),
+    ...(b.entries || []).filter((e) => !seen.has(e.id)).sort((x, y) => (x.id > y.id ? 1 : -1)),
+  ].filter((e) => !delSet.has(e.id));
   const mq = {};
   for (const q of new Set([...Object.keys(a.mq || {}), ...Object.keys(b.mq || {})])) mq[q] = !!((a.mq || {})[q] || (b.mq || {})[q]);
   const out = Object.assign({}, b, a, { /* local scalars win; unions below */
     entries,
+    del,
     steps: Math.max(a.steps || 0, b.steps || 0),
     xp: Math.max(a.xp || 0, b.xp || 0),
     closed: !!(a.closed || b.closed),
@@ -2544,7 +2557,25 @@ function Streakhouse() {
     setDesc(""); setCalInput(""); setProtInput(""); setFibInput(""); setEstimateNote(""); setEstimateItems(null);
   };
   const addEntry = (name, cal, p = 0, f = 0) => addEntries([{ name, cal, p, f }]);
-  const removeEntry = async (id) => commitDay(Object.assign({}, day, { entries: day.entries.filter((e) => e.id !== id) }));
+  /* Bites, Licks & Tastes: one running 30-cal-per-tap entry for the day */
+  const BLT_NAME = "bites, licks & tastes";
+  const bltEntry = day.entries.find((e) => e.name === BLT_NAME);
+  const addBlt = async () => {
+    if (day.closed) return;
+    if (!bltEntry) { await addEntry(BLT_NAME, 30); return; }
+    const cal = bltEntry.cal + 30;
+    await commitDay(Object.assign({}, day, { entries: day.entries.map((e) => (e.id === bltEntry.id ? Object.assign({}, e, { cal, m: Date.now() }) : e)) }));
+    flash(`+30 · ${cal} cal of bites today`);
+  };
+  const minusBlt = async () => {
+    if (!bltEntry) return;
+    if (bltEntry.cal <= 30) { await removeEntry(bltEntry.id); flash("Bites cleared"); return; }
+    const cal = bltEntry.cal - 30;
+    await commitDay(Object.assign({}, day, { entries: day.entries.map((e) => (e.id === bltEntry.id ? Object.assign({}, e, { cal, m: Date.now() }) : e)) }));
+    flash(`−30 · ${cal} cal of bites today`);
+  };
+
+  const removeEntry = async (id) => commitDay(Object.assign({}, day, { entries: day.entries.filter((e) => e.id !== id), del: [...(day.del || []), id] }));
   const saveEditEntry = async () => {
     const cal = parseInt(editEntry.cal, 10);
     if (!editEntry.name.trim() || isNaN(cal)) return;
@@ -2553,6 +2584,7 @@ function Streakhouse() {
       cal: Math.max(0, cal),
       p: Math.max(0, parseInt(editEntry.p, 10) || 0),
       f: Math.max(0, parseInt(editEntry.f, 10) || 0),
+      m: Date.now(), /* modified-at: the sync merge keeps the newer edit */
     };
     await commitDay(Object.assign({}, day, { entries: day.entries.map((e) => (e.id === editEntry.id ? Object.assign({}, e, fields) : e)) }));
     setEditEntry(null);
@@ -2920,7 +2952,7 @@ function Streakhouse() {
           if (!hit) { result(t, `No entry today matching "${t.input.match}". Today's log: ${day.entries.map((e) => e.name).join(", ") || "empty"}.`, true); continue; }
           mutated = true;
           if (t.name === "delete_food_entry") {
-            await commitDay(Object.assign({}, day, { entries: day.entries.filter((e) => e.id !== hit.id) }));
+            await commitDay(Object.assign({}, day, { entries: day.entries.filter((e) => e.id !== hit.id), del: [...(day.del || []), hit.id] }));
             result(t, { ok: true, deleted: hit.name, cal: hit.cal, today_total: baseTotal - hit.cal });
           } else {
             const entries = day.entries.map((e) => e.id === hit.id ? Object.assign({}, e, {
@@ -2928,6 +2960,7 @@ function Streakhouse() {
               cal: t.input.cal != null ? Math.round(t.input.cal) : e.cal,
               p: t.input.protein != null ? Math.round(t.input.protein) : e.p,
               f: t.input.fiber != null ? Math.round(t.input.fiber) : e.f,
+              m: Date.now(),
             }) : e);
             await commitDay(Object.assign({}, day, { entries }));
             result(t, { ok: true, edited: hit.name });
@@ -3533,6 +3566,16 @@ function Streakhouse() {
                 </div>
               );
             })}
+          </div>
+
+          <div className="card">
+            <h2>Bites, Licks & Tastes</h2>
+            <div className="sub">The spoonful while cooking, the fry off someone's plate — each tap files 30 cal, no questions asked.</div>
+            <div className="row" style={{ alignItems: "center" }}>
+              <button className="ember" style={{ flex: 1, fontWeight: 800 }} disabled={day.closed} onClick={addBlt} aria-label="Log 30 calories of bites, licks and tastes">+30 cal</button>
+              <div className="sub num" style={{ flex: 1, textAlign: "center", margin: 0 }}>{bltEntry ? `${bltEntry.cal} cal today` : "clean hands so far"}</div>
+              {bltEntry && <button className="tinybtn" aria-label="Remove 30 bite calories" onClick={minusBlt}>−30</button>}
+            </div>
           </div>
 
           <div className="card">
