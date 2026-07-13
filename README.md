@@ -28,6 +28,10 @@ Staples. A one-tap food logger on the eats tab, organized as seven collapsible s
 
 Vitals tab. Steps (top), a Weigh-in card (last weight + entry; the chart stays in trends), and the period tracker live on their own tab, keeping the eats front page food-only and the phone scroll short.
 
+Bites, Licks & Tastes. A tap bar between Staples and Pours: each tap adds 30 cal to a single running "bites, licks & tastes" entry for the day (a −30 button walks it back; clearing to zero removes the entry). Taps merge into one log line, not thirty.
+
+Sync now propagates entry EDITS and DELETES, not just additions: edits stamp a modified-at (m) on the entry and the day merge keeps the newer version per entry; deletes leave day-scoped tombstones (day.del) that union across devices so deleted entries can't resurrect.
+
 Pours. A one-tap drink logger on the eats tab: eight sticker-style drink icons (beer, light beer, wine, margarita, martini, old fashioned, seltzer, shot) with per-serving calories from the built-in table. Tapping logs the drink as a normal entry (editable/deletable like any other, counts toward the day and the weekend pool), and a badge on each icon shows today's count. The 3+-drinks data-reactive humor triggers pick these up like typed entries.
 
 Rules to remember
