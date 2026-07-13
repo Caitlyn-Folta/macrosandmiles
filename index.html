@@ -1934,6 +1934,13 @@ function StapleIcon({ kind, size = 38 }) {
   return <svg width={size} height={size} viewBox="0 0 46 46" aria-hidden="true">{art[kind]}</svg>;
 }
 
+/* log grouping: same windows as the meal pips, evening catches the late stuff */
+const MEAL_GROUPS = [
+  { id: "morning", label: "Morning", test: (e) => e.hour < 10 },
+  { id: "midday", label: "Midday", test: (e) => e.hour >= 10 && e.hour < 15 },
+  { id: "evening", label: "Evening", test: (e) => e.hour >= 15 || e.hour == null },
+];
+
 function BurritoMeter({ eaten, max }) {
   const pct = Math.max(0, Math.min(100, (eaten / Math.max(1, max)) * 100));
   const over = eaten > max;
@@ -2186,6 +2193,10 @@ function Streakhouse() {
   const [syncShowCode, setSyncShowCode] = useState(false);
   const [chatMsgs, setChatMsgs] = useState([]);
   const [openCat, setOpenCat] = useState(null);
+  const [openMeals, setOpenMeals] = useState(() => {
+    const h = new Date().getHours();
+    return [h < 10 ? "morning" : h < 15 ? "midday" : "evening"];
+  });
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const chatEndRef = useRef(null);
@@ -2521,6 +2532,9 @@ function Streakhouse() {
 
   const addEntries = async (items) => {
     const hour = new Date().getHours();
+    /* a fresh log always lands in a visible group */
+    const seg = hour < 10 ? "morning" : hour < 15 ? "midday" : "evening";
+    setOpenMeals((prev) => (prev.includes(seg) ? prev : [...prev, seg]));
     const es = items.map((it) => ({
       id: nextEntryId(),
       name: (it.name || "").trim() || "Food",
@@ -3500,37 +3514,52 @@ function Streakhouse() {
 
             <div style={{ marginTop: 14 }}>
               {day.entries.length === 0 && <div className="empty">{emptyLine}</div>}
-              {day.entries.map((e) =>
-                editEntry && editEntry.id === e.id ? (
-                  <div className="estitem" key={e.id}>
-                    <div className="row" style={{ marginTop: 0 }}>
-                      <input value={editEntry.name} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { name: ev.target.value }))} aria-label="Edit food name" />
-                    </div>
-                    <div className="row" style={{ marginTop: 6 }}>
-                      <input inputMode="numeric" value={editEntry.cal} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { cal: ev.target.value }))} placeholder="cal" aria-label="Edit calories" />
-                      <input inputMode="numeric" value={editEntry.p} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { p: ev.target.value }))} placeholder="prot g" aria-label="Edit protein" />
-                      <input inputMode="numeric" value={editEntry.f} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { f: ev.target.value }))} placeholder="fiber g" aria-label="Edit fiber" />
-                    </div>
-                    <div className="row" style={{ marginTop: 6 }}>
-                      <button className="pri" style={{ flex: 1 }} onClick={saveEditEntry} disabled={!editEntry.name.trim() || isNaN(parseInt(editEntry.cal, 10))}>Save</button>
-                      <button onClick={() => setEditEntry(null)}>Cancel</button>
-                    </div>
+              {MEAL_GROUPS.map((g) => {
+                const items = day.entries.filter(g.test);
+                if (!items.length) return null;
+                const subtotal = items.reduce((a, e) => a + e.cal, 0);
+                const open = openMeals.includes(g.id) || (editEntry && items.some((e) => e.id === editEntry.id));
+                return (
+                  <div key={g.id}>
+                    <button className={`cathdr mealhdr ${open ? "on" : ""}`} aria-expanded={open}
+                      onClick={() => setOpenMeals(open ? openMeals.filter((x) => x !== g.id) : [...openMeals, g.id])}>
+                      <span>{g.label}</span>
+                      <span className="num" style={{ fontSize: 11 }}>{items.length} item{items.length === 1 ? "" : "s"} {"\u00b7"} {subtotal} cal {open ? "\u25b4" : "\u25be"}</span>
+                    </button>
+                    {open && items.map((e) =>
+                      editEntry && editEntry.id === e.id ? (
+                        <div className="estitem" key={e.id}>
+                          <div className="row" style={{ marginTop: 0 }}>
+                            <input value={editEntry.name} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { name: ev.target.value }))} aria-label="Edit food name" />
+                          </div>
+                          <div className="row" style={{ marginTop: 6 }}>
+                            <input inputMode="numeric" value={editEntry.cal} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { cal: ev.target.value }))} placeholder="cal" aria-label="Edit calories" />
+                            <input inputMode="numeric" value={editEntry.p} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { p: ev.target.value }))} placeholder="prot g" aria-label="Edit protein" />
+                            <input inputMode="numeric" value={editEntry.f} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { f: ev.target.value }))} placeholder="fiber g" aria-label="Edit fiber" />
+                          </div>
+                          <div className="row" style={{ marginTop: 6 }}>
+                            <button className="pri" style={{ flex: 1 }} onClick={saveEditEntry} disabled={!editEntry.name.trim() || isNaN(parseInt(editEntry.cal, 10))}>Save</button>
+                            <button onClick={() => setEditEntry(null)}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="entry" key={e.id}>
+                          <span className="nm">
+                            {e.name}
+                            {(e.p || e.f) ? <span className="entrymacros num"><ProteinIcon size={11} />{e.p || 0} <FiberIcon size={11} />{e.f || 0}</span> : null}
+                          </span>
+                          <span className="actions">
+                            <span className="cal num">{e.cal}</span>
+                            <button className="tinybtn" title="Edit" aria-label={`Edit ${e.name}`} onClick={() => setEditEntry({ id: e.id, name: e.name, cal: String(e.cal), p: String(e.p || 0), f: String(e.f || 0) })}>✎</button>
+                            <button className="tinybtn" title="Save as preset" aria-label={`Save ${e.name} as preset`} onClick={() => savePreset(e.name, e.cal, e.p || 0, e.f || 0)}>☆</button>
+                            <button className="tinybtn" title="Delete" aria-label={`Delete ${e.name}`} onClick={() => removeEntry(e.id)}>✕</button>
+                          </span>
+                        </div>
+                      )
+                    )}
                   </div>
-                ) : (
-                  <div className="entry" key={e.id}>
-                    <span className="nm">
-                      {e.name}
-                      {(e.p || e.f) ? <span className="entrymacros num"><ProteinIcon size={11} />{e.p || 0} <FiberIcon size={11} />{e.f || 0}</span> : null}
-                    </span>
-                    <span className="actions">
-                      <span className="cal num">{e.cal}</span>
-                      <button className="tinybtn" title="Edit" aria-label={`Edit ${e.name}`} onClick={() => setEditEntry({ id: e.id, name: e.name, cal: String(e.cal), p: String(e.p || 0), f: String(e.f || 0) })}>✎</button>
-                      <button className="tinybtn" title="Save as preset" aria-label={`Save ${e.name} as preset`} onClick={() => savePreset(e.name, e.cal, e.p || 0, e.f || 0)}>☆</button>
-                      <button className="tinybtn" title="Delete" aria-label={`Delete ${e.name}`} onClick={() => removeEntry(e.id)}>✕</button>
-                    </span>
-                  </div>
-                )
-              )}
+                );
+              })}
             </div>
           </div>
 
@@ -4090,6 +4119,8 @@ function Streakhouse() {
         .chatact { align-self:flex-start; font-size:11px; font-weight:800; background:#7ED957; color:#1E1A1C; border:2px solid #1E1A1C; border-radius:999px; padding:3px 11px; box-shadow:2px 2px 0 #1E1A1C; }
         button.cathdr { width:100%; display:flex; justify-content:space-between; align-items:center; background:#FFFDF8; border:2.5px solid #1E1A1C; border-radius:12px; padding:8px 12px; margin-top:10px; font-weight:800; font-size:12px; letter-spacing:.6px; text-transform:uppercase; color:#1E1A1C; cursor:pointer; box-shadow:2px 2px 0 #1E1A1C; font-family:inherit; }
         button.cathdr.on { background:#FFC93C; }
+        button.cathdr.mealhdr { padding:6px 12px; font-size:11px; background:#FAF3E7; }
+        button.cathdr.mealhdr.on { background:#9B6DF2; }
         button.cathdr:active { transform:translate(2px,2px); box-shadow:0 0 0 #1E1A1C; }
         .pours { display:grid; grid-template-columns:repeat(3,1fr); gap:12px 10px; margin-top:12px; }
         button.pourbtn { position:relative; background:#fff; border:2.5px solid #1E1A1C; border-radius:14px; box-shadow:3px 3px 0 #1E1A1C; padding:7px 2px 5px; display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; font-family:inherit; }

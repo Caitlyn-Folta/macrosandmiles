@@ -28,6 +28,8 @@ The Pantry (STAPLE_CATS). A one-tap food logger on the eats tab, organized as se
 
 Vitals tab. Steps (top), a Weigh-in card (last weight + entry; the chart stays in trends), and the period tracker live on their own tab, keeping the eats front page food-only and the phone scroll short.
 
+The log groups by meal window — Morning (before 10), Midday (10–3), Evening (3 on, late-night included) — as collapsible headers showing item count and calorie subtotal (MEAL_GROUPS in index.html). The current window opens by default, logging into a collapsed window auto-opens it, and editing an entry force-opens its group.
+
 Bites, Licks & Tastes. A tap bar between Staples and Pours: each tap adds 30 cal to a single running "bites, licks & tastes" entry for the day (a −30 button walks it back; clearing to zero removes the entry). Taps merge into one log line, not thirty.
 
 Sync now propagates entry EDITS and DELETES, not just additions: edits stamp a modified-at (m) on the entry and the day merge keeps the newer version per entry; deletes leave day-scoped tombstones (day.del) that union across devices so deleted entries can't resurrect.
