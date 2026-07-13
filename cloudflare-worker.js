@@ -65,6 +65,81 @@ const SCHEMA = {
   },
 };
 
+/* ---- chat mode: the conversational tracker ----
+   The app runs the agentic loop: it POSTs the transcript here, Claude may
+   answer with tool calls (log/edit/delete/weigh), the APP executes them
+   against its own on-device data and POSTs the results back, until Claude
+   has nothing left to do. This Worker stays a stateless proxy — no data
+   is stored here, the API key never leaves the secrets. */
+const CHAT_SYSTEM =
+  "You are the tracker inside \"Macros & Miles\", a personal calorie and macro journal. " +
+  "The user logs food by talking to you. Voice: warm, witty, brief — never shameful, and " +
+  "never joke about weight or the person; react to the food, the hour, or the habit.\n" +
+  "Rules:\n" +
+  "- Estimate calories, protein grams, and fiber grams accurately. When a description is " +
+  "ambiguous about portion, preparation, or brand, ask ONE brief clarifying question before " +
+  "logging. If it's reasonably clear, just log — don't interrogate.\n" +
+  "- When ready, state the estimate in one short sentence, then call log_food once per " +
+  "distinct item. Scale to the stated portion (fractions like .25 or 1/4 included).\n" +
+  "- After logging, tell them where they stand using the tool result's today_total and " +
+  "remaining. On pool days (see state), frame it against the weekend pool.\n" +
+  "- 'Same as yesterday': the state includes yesterday's entries — list what you found and " +
+  "confirm before logging. Never guess which items they mean.\n" +
+  "- Fix mistakes with edit_food_entry / delete_food_entry (one edit or delete per message). " +
+  "Record weigh-ins with log_weight.\n" +
+  "- Questions like 'what have I had' or 'how much is left' — answer from the state, no tools.\n" +
+  "- Keep replies to one to three short sentences. Never invent foods the user didn't mention.";
+
+const CHAT_TOOLS = [
+  {
+    name: "log_food",
+    description: "Log one food or drink item to today's journal. Call once per distinct item, with calories scaled to the user's stated portion.",
+    input_schema: {
+      type: "object",
+      required: ["name", "cal"],
+      properties: {
+        name: { type: "string", description: "short log label, e.g. 'jalapeño popper mac n cheese'" },
+        cal: { type: "integer" },
+        protein: { type: "number", description: "grams, 0 if negligible" },
+        fiber: { type: "number", description: "grams, 0 if negligible" },
+      },
+    },
+  },
+  {
+    name: "edit_food_entry",
+    description: "Fix one of today's logged entries, matched by (partial) name. Only include the fields being changed.",
+    input_schema: {
+      type: "object",
+      required: ["match"],
+      properties: {
+        match: { type: "string", description: "name (or part of it) of the entry to change" },
+        name: { type: "string" },
+        cal: { type: "integer" },
+        protein: { type: "number" },
+        fiber: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "delete_food_entry",
+    description: "Remove one of today's logged entries, matched by (partial) name.",
+    input_schema: {
+      type: "object",
+      required: ["match"],
+      properties: { match: { type: "string" } },
+    },
+  },
+  {
+    name: "log_weight",
+    description: "Record today's weigh-in (in the user's display unit).",
+    input_schema: {
+      type: "object",
+      required: ["weight"],
+      properties: { weight: { type: "number" } },
+    },
+  },
+];
+
 export default {
   async fetch(request, env) {
     const cors = {
@@ -112,6 +187,40 @@ export default {
         return json({ rev: next.rev });
       }
       return json({ error: "GET or PUT only on /sync" }, 405);
+    }
+
+    /* ---- /chat: one model turn of the conversational tracker ---- */
+    if (new URL(request.url).pathname.endsWith("/chat")) {
+      if (request.method !== "POST") return json({ error: "POST { messages, context }" }, 405);
+      if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY secret is not set on this Worker" }, 500);
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "body must be JSON" }, 400); }
+      const messages = Array.isArray(body.messages) ? body.messages.slice(-24) : [];
+      if (!messages.length) return json({ error: "messages required" }, 400);
+      if (JSON.stringify(messages).length > 60000) return json({ error: "transcript too large" }, 413);
+      const state = JSON.stringify(body.context || {}).slice(0, 6000);
+
+      const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": env.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 900,
+          system: `${CHAT_SYSTEM}\n\nCurrent state (JSON, trust it over memory):\n${state}`,
+          tools: CHAT_TOOLS,
+          messages,
+        }),
+      });
+      if (!upstream.ok) {
+        const detail = await upstream.text().catch(() => "");
+        return json({ error: `Anthropic API ${upstream.status}`, detail: detail.slice(0, 300) }, 502);
+      }
+      const data = await upstream.json();
+      return json({ content: data.content, stop_reason: data.stop_reason });
     }
 
     if (request.method !== "POST") return json({ error: "POST a JSON body like {\"text\": \"2 street tacos\"}" }, 405);

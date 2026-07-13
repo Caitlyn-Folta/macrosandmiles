@@ -116,6 +116,7 @@ const K = {
   profile: "sh:profile",
   lastVisit: "sh:lastVisit",
   cycle: "sh:cycle",
+  chat: "sh:chat",
   day: (d) => "sh:day:" + d,
   photo: (d) => "sh:photo:" + d,
 };
@@ -1530,6 +1531,10 @@ function Streakhouse() {
   const [syncCodeDraft, setSyncCodeDraft] = useState("");
   const [syncNote, setSyncNote] = useState("");
   const [syncShowCode, setSyncShowCode] = useState(false);
+  const [chatMsgs, setChatMsgs] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const chatEndRef = useRef(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoNote, setPhotoNote] = useState("");
   const fileRef = useRef(null);
@@ -2164,6 +2169,134 @@ function Streakhouse() {
     flash("Sync is off on this device. Local data stays put.");
   };
 
+  /* ---------- chat mode: talk to the tracker ----------
+     The Worker's /chat endpoint runs one model turn; tools execute HERE,
+     against the same on-device day/weight data as the rest of the app. */
+  useEffect(() => {
+    if (!loaded) return;
+    (async () => { const c = await sget(K.chat); if (Array.isArray(c)) setChatMsgs(c); })();
+  }, [loaded]);
+  useEffect(() => {
+    if (chatEndRef.current) chatEndRef.current.scrollIntoView({ block: "nearest" });
+  }, [chatMsgs, chatBusy]);
+  const persistChat = (msgs) => sset(K.chat, msgs.slice(-60));
+
+  /* trim for the model: walk back to a plain user-text message so
+     tool_use/tool_result pairs are never orphaned (the first message
+     of a transcript is always plain user text) */
+  const trimChat = (msgs) => {
+    let start = Math.max(0, msgs.length - 16);
+    while (start > 0 && !(msgs[start].role === "user" && typeof msgs[start].content === "string")) start--;
+    return msgs.slice(start);
+  };
+
+  const execChatTools = (toolUses, baseTotal) => {
+    const results = [];
+    const result = (t, obj, isError) => results.push({ type: "tool_result", tool_use_id: t.id, content: typeof obj === "string" ? obj : JSON.stringify(obj), is_error: !!isError });
+    if (day.closed) { toolUses.forEach((t) => result(t, "Today is already closed — reopen it from the day-close card first.", true)); return Promise.resolve(results); }
+    const logs = toolUses.filter((t) => t.name === "log_food");
+    const others = toolUses.filter((t) => t.name !== "log_food");
+    const work = async () => {
+      if (logs.length) {
+        await addEntries(logs.map((t) => ({
+          name: String(t.input.name || "item").slice(0, 50),
+          cal: Math.round(t.input.cal) || 0,
+          p: Math.round(t.input.protein || 0),
+          f: Math.round(t.input.fiber || 0),
+        })));
+        let run = baseTotal;
+        for (const t of logs) {
+          run += Math.round(t.input.cal) || 0;
+          result(t, { ok: true, logged: t.input.name, cal: Math.round(t.input.cal) || 0, today_total: run, remaining: budgetShown - run });
+        }
+      }
+      let mutated = logs.length > 0; /* day state is stale after a write — one change per message */
+      for (const t of others) {
+        if (mutated && t.name !== "log_weight") { result(t, "Only one edit or delete per message — ask again for the next change.", true); continue; }
+        if (t.name === "edit_food_entry" || t.name === "delete_food_entry") {
+          const q = normalizeFood(String(t.input.match || ""));
+          const hit = day.entries.find((e) => normalizeFood(e.name).includes(q) || (q && q.includes(normalizeFood(e.name))));
+          if (!hit) { result(t, `No entry today matching "${t.input.match}". Today's log: ${day.entries.map((e) => e.name).join(", ") || "empty"}.`, true); continue; }
+          mutated = true;
+          if (t.name === "delete_food_entry") {
+            await commitDay(Object.assign({}, day, { entries: day.entries.filter((e) => e.id !== hit.id) }));
+            result(t, { ok: true, deleted: hit.name, cal: hit.cal, today_total: baseTotal - hit.cal });
+          } else {
+            const entries = day.entries.map((e) => e.id === hit.id ? Object.assign({}, e, {
+              name: t.input.name != null ? String(t.input.name).slice(0, 50) : e.name,
+              cal: t.input.cal != null ? Math.round(t.input.cal) : e.cal,
+              p: t.input.protein != null ? Math.round(t.input.protein) : e.p,
+              f: t.input.fiber != null ? Math.round(t.input.fiber) : e.f,
+            }) : e);
+            await commitDay(Object.assign({}, day, { entries }));
+            result(t, { ok: true, edited: hit.name });
+          }
+        } else if (t.name === "log_weight") {
+          const ok = await saveWeight(String(t.input.weight));
+          result(t, ok ? { ok: true, weight: t.input.weight } : "that doesn't look like a valid weight", !ok);
+        } else {
+          result(t, `unknown tool ${t.name}`, true);
+        }
+      }
+      return results;
+    };
+    return work();
+  };
+
+  const sendChat = async () => {
+    const text = chatInput.trim();
+    if (!text || chatBusy || !settings.aiUrl) return;
+    setChatBusy(true); setChatInput("");
+    let msgs = [...chatMsgs, { role: "user", content: text }];
+    setChatMsgs(msgs); persistChat(msgs);
+    try {
+      const ydoc = await sget(K.day(shiftDate(today, -1)));
+      const context = {
+        date: today,
+        pool_day: poolDay,
+        budget_today: budgetShown,
+        today_total: total,
+        remaining,
+        weekend_pool: poolDay ? pool : undefined,
+        pool_spent: poolDay ? poolSpent : undefined,
+        protein_today: totP, protein_goal: settings.proteinGoal,
+        fiber_today: totF, fiber_goal: settings.fiberGoal,
+        entries_today: day.entries.map((e) => ({ name: e.name, cal: e.cal })),
+        entries_yesterday: ((ydoc && ydoc.entries) || []).map((e) => ({ name: e.name, cal: e.cal })),
+        day_closed: !!day.closed,
+        weight_unit: "lb",
+      };
+      let baseTotal = total;
+      for (let round = 0; round < 5; round++) {
+        const res = await fetch(settings.aiUrl + "/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: trimChat(msgs), context }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!Array.isArray(data.content)) throw new Error("unexpected reply shape");
+        msgs = [...msgs, { role: "assistant", content: data.content }];
+        setChatMsgs(msgs); persistChat(msgs);
+        if (data.stop_reason !== "tool_use") break;
+        const toolUses = data.content.filter((b) => b.type === "tool_use");
+        const results = await execChatTools(toolUses, baseTotal);
+        baseTotal += toolUses.filter((t) => t.name === "log_food").reduce((a, t) => a + (Math.round(t.input.cal) || 0), 0);
+        msgs = [...msgs, { role: "user", content: results }];
+        setChatMsgs(msgs); persistChat(msgs);
+      }
+    } catch (e) {
+      msgs = [...msgs, { role: "assistant", content: [{ type: "text", text: `(connection hiccup — ${e.message}. Nothing was lost; try that again.)` }] }];
+      setChatMsgs(msgs); persistChat(msgs);
+    }
+    setChatBusy(false);
+  };
+
+  const clearChat = async () => {
+    setChatMsgs([]); await sset(K.chat, []);
+    flash("Chat cleared. The log itself is untouched.");
+  };
+
   /* ---------- week-in-review handlers ---------- */
   const openSundayReview = () => {
     const mon = weekMonday(today);
@@ -2677,6 +2810,63 @@ function Streakhouse() {
         </React.Fragment>
   );
 
+  const chatContent = (
+    <div className="card">
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <h2>Chat</h2>
+        {chatMsgs.length > 0 && <button className="tinybtn" onClick={clearChat} aria-label="Clear chat history">clear</button>}
+      </div>
+      {!settings.aiUrl ? (
+        <div className="sub">
+          Chat needs your Cloudflare Worker — set it up once in the plan tab (✨ AI lookup → Save & test),
+          then log food by talking it through here. It asks before it guesses.
+        </div>
+      ) : (
+        <React.Fragment>
+          <div className="chatlog" aria-live="polite">
+            {chatMsgs.length === 0 && (
+              <div className="sub">
+                Tell it what you ate and it logs it — asking first when the portion's unclear.
+                Try "2 eggs and buttered toast", "same dinner as last night", "delete the yogurt",
+                or "how much do I have left?"
+              </div>
+            )}
+            {chatMsgs.map((m, i) => {
+              if (m.role === "user") {
+                if (typeof m.content !== "string") return null; /* tool results */
+                return <div key={i} className="bubble user">{m.content}</div>;
+              }
+              const txt = (m.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+              const acts = (m.content || []).filter((b) => b.type === "tool_use");
+              return (
+                <React.Fragment key={i}>
+                  {txt && <div className="bubble asst">{txt}</div>}
+                  {acts.map((a, j) => (
+                    <div key={j} className="chatact num">
+                      {a.name === "log_food" ? `✓ logged ${a.input.name} · ${a.input.cal} cal`
+                        : a.name === "delete_food_entry" ? `✕ removed "${a.input.match}"`
+                        : a.name === "edit_food_entry" ? `✎ updated "${a.input.match}"`
+                        : a.name === "log_weight" ? `✓ weigh-in ${a.input.weight}`
+                        : a.name}
+                    </div>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+            {chatBusy && <div className="bubble asst typing">…</div>}
+            <div ref={chatEndRef} />
+          </div>
+          <div className="row" style={{ marginTop: 8, alignItems: "stretch" }}>
+            <textarea rows={2} className="foodbox" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+              placeholder="I had…" aria-label="Chat message" />
+            <button className="pri" style={{ minWidth: 68 }} onClick={sendChat} disabled={chatBusy || !chatInput.trim()}>Send</button>
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+
   const trendsContent = (
     <React.Fragment>
           <div className="card">
@@ -3057,6 +3247,12 @@ function Streakhouse() {
         .quip { background:#FFD6E8; border:2px solid #7C48D8; border-radius:14px; padding:10px 14px; margin-top:12px; transform:rotate(-.4deg); }
         .quip .ql { font-size:9px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; color:#7C48D8; }
         .quip .qt { font-size:13px; font-weight:800; margin-top:2px; line-height:1.35; }
+        .chatlog { max-height:360px; overflow-y:auto; display:flex; flex-direction:column; gap:9px; padding:6px 2px 2px; }
+        .bubble { max-width:86%; padding:8px 12px; border:2.5px solid #1E1A1C; border-radius:16px; font-size:14px; line-height:1.35; white-space:pre-wrap; overflow-wrap:break-word; }
+        .bubble.user { align-self:flex-end; background:#FF5FA2; color:#1E1A1C; border-bottom-right-radius:5px; box-shadow:2px 2px 0 #1E1A1C; }
+        .bubble.asst { align-self:flex-start; background:#FFFDF8; border-bottom-left-radius:5px; box-shadow:2px 2px 0 #1E1A1C; }
+        .bubble.typing { color:#5C5254; letter-spacing:2px; }
+        .chatact { align-self:flex-start; font-size:11px; font-weight:800; background:#7ED957; color:#1E1A1C; border:2px solid #1E1A1C; border-radius:999px; padding:3px 11px; box-shadow:2px 2px 0 #1E1A1C; }
         .pours { display:grid; grid-template-columns:repeat(3,1fr); gap:12px 10px; margin-top:12px; }
         button.pourbtn { position:relative; background:#fff; border:2.5px solid #1E1A1C; border-radius:14px; box-shadow:3px 3px 0 #1E1A1C; padding:7px 2px 5px; display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; font-family:inherit; }
         button.pourbtn:hover { transform:translate(-1px,-1px); box-shadow:4px 4px 0 #1E1A1C; }
@@ -3151,7 +3347,7 @@ function Streakhouse() {
 
       {!wide && (
         <div className="tabs" role="tablist">
-          {["today", "trends", "photos", "plan"].map((t) => (
+          {["today", "chat", "trends", "photos", "plan"].map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={`tabbtn ${tab === t ? "on" : ""}`} onClick={() => { setTab(t); if (t === "plan") prefillGoalDrafts(); }}>{t}</button>
           ))}
         </div>
@@ -3160,12 +3356,13 @@ function Streakhouse() {
       {wide ? (
         <div className="dash">
           <div className="dashcol">{todayContent}</div>
-          <div className="dashcol">{trendsContent}</div>
+          <div className="dashcol">{chatContent}{trendsContent}</div>
           <div className="dashcol">{planContent}{photosContent}</div>
         </div>
       ) : (
         <React.Fragment>
           {tab === "today" && todayContent}
+          {tab === "chat" && chatContent}
           {tab === "trends" && trendsContent}
           {tab === "photos" && photosContent}
           {tab === "plan" && planContent}
