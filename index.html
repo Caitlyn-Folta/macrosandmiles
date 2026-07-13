@@ -1164,9 +1164,13 @@ function BurritoMeter({ eaten, max }) {
   const t = pct / 100;
   const bitten = t > 0.02;
   const INK = "#1E1A1C";
-  /* left edge of what remains: first bite jumps to 96, last bite ends at 246 */
-  const biteX = 96 + t * 150;
+  /* left edge of what remains: first bite jumps to 100, last bite ends near the foil */
+  const biteX = 100 + t * 160;
   const TOP = 52, BOT = 144, MID = (TOP + BOT) / 2;
+  /* the foil sleeve: covers the far end when whole, and unrolls rightward
+     as the bites approach — always keeping a stretch of tortilla exposed */
+  const foilX = Math.min(298, Math.max(226, biteX + 54));
+  const flapCount = 2 + (t > 0.3 ? 1 : 0) + (t > 0.65 ? 1 : 0);
 
   /* scalloped bite boundary, top to bottom at x = biteX — near-semicircle
      arcs (sweep 1) carve INTO the burrito like teeth marks */
@@ -1174,8 +1178,12 @@ function BurritoMeter({ eaten, max }) {
     `M ${x} ${TOP} a 16 16 0 0 1 3 31 a 17 17 0 0 1 -1 33 a 14 14 0 0 1 -2 28`;
   /* silhouette of the remaining piece: bitten face (or closed left cap) + body + rounded right end */
   const remainPath = bitten
-    ? `${scallop(biteX)} L 254 ${BOT} A 46 46 0 0 0 254 ${TOP} Z`
-    : `M 96 ${TOP} A 46 46 0 0 0 96 ${BOT} L 254 ${BOT} A 46 46 0 0 0 254 ${TOP} Z`;
+    ? `${scallop(biteX)} L 318 ${BOT} A 47 47 0 0 0 318 ${TOP} Z`
+    : `M 100 ${TOP} A 47 47 0 0 0 100 ${BOT} L 318 ${BOT} A 47 47 0 0 0 318 ${TOP} Z`;
+  /* crinkle-edged foil sleeve, slightly fatter than the tortilla */
+  const cuff = (x) =>
+    `M ${x + 2} ${TOP - 7} L ${x + 7} ${TOP + 9} L ${x - 3} ${TOP + 27} L ${x + 6} ${MID - 3} L ${x - 3} ${MID + 19} L ${x + 6} ${BOT - 13} L ${x + 2} ${BOT + 7}`;
+  const foilPath = `${cuff(foilX)} L 320 ${BOT + 7} A 50 53 0 0 0 320 ${TOP - 7} Z`;
 
   /* crumbs appear where the burrito used to be — more of them as it shrinks */
   const crumbs = [
@@ -1186,48 +1194,64 @@ function BurritoMeter({ eaten, max }) {
 
   return (
     <div style={{ marginTop: 12 }}>
-      <svg viewBox="0 0 340 200" style={{ width: 250, maxWidth: "78%", height: "auto", display: "block", margin: "0 auto" }} role="img"
+      <svg viewBox="0 0 380 200" style={{ width: 270, maxWidth: "82%", height: "auto", display: "block", margin: "0 auto" }} role="img"
         aria-label={`Weekend pool: ${eaten.toLocaleString()} of ${max.toLocaleString()} calories eaten`}>
         {!gone ? (
-          <g transform="rotate(-4 170 98)">
+          <g transform="rotate(-4 190 98)">
             <defs>
               <clipPath id="mm-remain"><path d={remainPath} /></clipPath>
             </defs>
 
-            {/* hard offset sticker shadow */}
+            {/* hard offset sticker shadow (tortilla + foil together) */}
             <path d={remainPath} transform="translate(5 6)" fill={INK} opacity=".9" />
+            <path d={foilPath} transform="translate(5 6)" fill={INK} opacity=".9" />
 
             {/* tortilla body */}
             <path d={remainPath} fill="#F2D8A0" stroke={INK} strokeWidth="3.5" strokeLinejoin="round" />
 
-            {/* wrap details, clipped to what's left */}
+            {/* tortilla texture + bite face, clipped to what's left */}
             <g clipPath="url(#mm-remain)">
               {/* diagonal wrap seams */}
-              <path d={`M 150 ${TOP + 2} C 176 ${MID - 14} 176 ${MID + 14} 150 ${BOT - 2}`} fill="none" stroke="#D9B878" strokeWidth="3.5" strokeLinecap="round" />
-              <path d={`M 196 ${TOP + 2} C 222 ${MID - 14} 222 ${MID + 14} 196 ${BOT - 2}`} fill="none" stroke="#D9B878" strokeWidth="3.5" strokeLinecap="round" />
-              {/* tucked end folds */}
-              <path d={`M 252 ${TOP + 10} C 238 ${MID - 10} 238 ${MID + 10} 252 ${BOT - 10}`} fill="none" stroke="#D9B878" strokeWidth="3" strokeLinecap="round" />
-              <path d={`M 268 ${TOP + 16} C 258 ${MID - 6} 258 ${MID + 6} 268 ${BOT - 16}`} fill="none" stroke="#E8CD96" strokeWidth="3" strokeLinecap="round" />
-              {/* toasty spots */}
-              <ellipse cx="172" cy="72" rx="9" ry="5" fill="#E4C186" transform="rotate(-14 172 72)" />
-              <ellipse cx="218" cy="120" rx="8" ry="4.5" fill="#E4C186" transform="rotate(10 218 120)" />
-              <ellipse cx="246" cy="70" rx="6" ry="3.5" fill="#E4C186" transform="rotate(-8 246 70)" />
-              <ellipse cx="140" cy="118" rx="7" ry="4" fill="#E4C186" transform="rotate(6 140 118)" />
-              {/* top sheen */}
-              <path d={`M 128 ${TOP + 10} C 170 ${TOP + 2} 216 ${TOP + 2} 248 ${TOP + 10}`} fill="none" stroke="#FBEBC8" strokeWidth="5" strokeLinecap="round" opacity=".8" />
+              <path d={`M 140 ${TOP + 2} C 166 ${MID - 14} 166 ${MID + 14} 140 ${BOT - 2}`} fill="none" stroke="#D9B878" strokeWidth="3.5" strokeLinecap="round" />
+              <path d={`M 186 ${TOP + 2} C 212 ${MID - 14} 212 ${MID + 14} 186 ${BOT - 2}`} fill="none" stroke="#D9B878" strokeWidth="3.5" strokeLinecap="round" />
+              <path d={`M 232 ${TOP + 2} C 258 ${MID - 14} 258 ${MID + 14} 232 ${BOT - 2}`} fill="none" stroke="#D9B878" strokeWidth="3" strokeLinecap="round" />
+              <path d={`M 276 ${TOP + 2} C 302 ${MID - 14} 302 ${MID + 14} 276 ${BOT - 2}`} fill="none" stroke="#D9B878" strokeWidth="3" strokeLinecap="round" />
+              {/* toasty griddle spots */}
+              <ellipse cx="156" cy="74" rx="9" ry="5" fill="#E0B87E" transform="rotate(-14 156 74)" />
+              <ellipse cx="204" cy="120" rx="8" ry="4.5" fill="#E0B87E" transform="rotate(10 204 120)" />
+              <ellipse cx="244" cy="72" rx="6.5" ry="3.5" fill="#E0B87E" transform="rotate(-8 244 72)" />
+              <ellipse cx="128" cy="116" rx="7" ry="4" fill="#E0B87E" transform="rotate(6 128 116)" />
+              <ellipse cx="178" cy="98" rx="5" ry="3" fill="#E8C48C" transform="rotate(-4 178 98)" />
+              <ellipse cx="282" cy="112" rx="7" ry="4" fill="#E0B87E" transform="rotate(8 282 112)" />
+              <ellipse cx="262" cy="90" rx="4.5" ry="2.8" fill="#E8C48C" transform="rotate(-6 262 90)" />
+              {/* flour speckles */}
+              {[[134, 66], [162, 112], [192, 70], [212, 100], [150, 130], [248, 112], [224, 84], [126, 90], [268, 70], [288, 96]].map(([x, y], i) => (
+                <circle key={i} cx={x} cy={y} r="1.7" fill="#D9B878" />
+              ))}
+              {/* bottom shading + top sheen */}
+              <path d={`M ${biteX + 14} ${BOT - 7} C 190 ${BOT - 1} 250 ${BOT - 1} 306 ${BOT - 8}`} fill="none" stroke="#E0C08A" strokeWidth="7" strokeLinecap="round" opacity=".8" />
+              <path d={`M 124 ${TOP + 9} C 180 ${TOP + 1} 240 ${TOP + 1} 306 ${TOP + 9}`} fill="none" stroke="#FBEBC8" strokeWidth="5" strokeLinecap="round" opacity=".85" />
 
-              {/* bitten face: inner tortilla rim + filling cross-section */}
+              {/* bitten face: tortilla ring, dark interior, chunky legible filling */}
               {bitten && (
                 <g>
-                  <path d={scallop(biteX)} fill="none" stroke="#FBEBC8" strokeWidth="13" strokeLinejoin="round" />
-                  {/* filling blobs peeking out of the bite face */}
-                  <ellipse cx={biteX + 8} cy={MID - 24} rx="10" ry="8" fill="#7ED957" stroke={INK} strokeWidth="2" />
-                  <circle cx={biteX + 3} cy={MID - 6} r="6.5" fill="#8B5A3C" stroke={INK} strokeWidth="2" />
-                  <ellipse cx={biteX + 10} cy={MID + 8} rx="9" ry="7" fill="#FF6B6B" stroke={INK} strokeWidth="2" />
-                  <circle cx={biteX + 2} cy={MID + 24} r="6" fill="#FFC93C" stroke={INK} strokeWidth="2" />
-                  <circle cx={biteX + 12} cy={MID - 10} r="3" fill="#FFF7E6" stroke={INK} strokeWidth="1.5" />
-                  <circle cx={biteX + 7} cy={MID + 18} r="2.6" fill="#FFF7E6" stroke={INK} strokeWidth="1.5" />
-                  <circle cx={biteX + 13} cy={MID + 22} r="2.2" fill="#FFF7E6" stroke={INK} strokeWidth="1.5" />
+                  <path d={scallop(biteX)} fill="none" stroke="#FBEBC8" strokeWidth="17" strokeLinejoin="round" />
+                  <rect x={biteX - 1} y={MID - 39} width="21" height="78" rx="10" fill="#6E4A28" stroke={INK} strokeWidth="2.5" />
+                  {/* guac */}
+                  <ellipse cx={biteX + 9} cy={MID - 28} rx="11" ry="8.5" fill="#7ED957" stroke={INK} strokeWidth="2.2" />
+                  <circle cx={biteX + 4} cy={MID - 31} r="2" fill="#5CB93C" />
+                  {/* tomato */}
+                  <rect x={biteX + 1} y={MID - 17} width="13" height="13" rx="3.5" fill="#FF6B6B" stroke={INK} strokeWidth="2.2" transform={`rotate(-12 ${biteX + 7} ${MID - 10})`} />
+                  {/* beans */}
+                  <ellipse cx={biteX + 12} cy={MID - 1} rx="6.5" ry="5" fill="#8B5A3C" stroke={INK} strokeWidth="2.2" />
+                  <ellipse cx={biteX + 3} cy={MID + 6} rx="6" ry="4.5" fill="#7A4C30" stroke={INK} strokeWidth="2.2" />
+                  {/* cheese shreds */}
+                  <path d={`M ${biteX + 1} ${MID + 16} q 5 -4 9 0 q 5 4 9 0`} fill="none" stroke="#FFC93C" strokeWidth="4" strokeLinecap="round" />
+                  <path d={`M ${biteX + 3} ${MID + 22} q 4 -3 8 0`} fill="none" stroke="#FFC93C" strokeWidth="3.4" strokeLinecap="round" />
+                  {/* rice */}
+                  {[[4, 30], [11, 34], [16, 27], [7, 36]].map(([dx, dy], i) => (
+                    <ellipse key={i} cx={biteX + dx} cy={MID + dy} rx="3.4" ry="2.2" fill="#FFF7E6" stroke={INK} strokeWidth="1.6" transform={`rotate(${i * 40 - 30} ${biteX + dx} ${MID + dy})`} />
+                  ))}
                 </g>
               )}
             </g>
@@ -1243,6 +1267,30 @@ function BurritoMeter({ eaten, max }) {
               </g>
             )}
 
+            {/* ---- foil sleeve: wraps the far end, unrolls as the bites advance ---- */}
+            <g>
+              <path d={foilPath} fill="#C9CFD9" stroke={INK} strokeWidth="3.5" strokeLinejoin="round" />
+              {/* crinkle facets */}
+              <path d={`M ${foilX + 10} ${TOP - 2} L ${foilX + 26} ${TOP + 16} L ${foilX + 14} ${TOP + 34}`} fill="none" stroke="#AEB5C2" strokeWidth="2.6" strokeLinejoin="round" />
+              <path d={`M ${foilX + 20} ${BOT + 2} L ${foilX + 34} ${BOT - 18} L ${foilX + 24} ${BOT - 36}`} fill="none" stroke="#AEB5C2" strokeWidth="2.6" strokeLinejoin="round" />
+              <path d={`M ${foilX + 40} ${TOP + 4} L ${foilX + 52} ${MID - 8} L ${foilX + 42} ${MID + 16}`} fill="none" stroke="#B8BFCB" strokeWidth="2.4" strokeLinejoin="round" />
+              {/* shine streaks */}
+              <path d={`M ${foilX + 12} ${TOP + 8} L ${foilX + 6} ${MID + 6}`} stroke="#F4F6F9" strokeWidth="5" strokeLinecap="round" />
+              <path d={`M ${foilX + 30} ${MID - 20} L ${foilX + 24} ${MID + 24}`} stroke="#EDF0F4" strokeWidth="4" strokeLinecap="round" />
+              {/* rolled-back cuff highlight along the unrolled edge */}
+              <path d={cuff(foilX)} fill="none" stroke="#EDF0F4" strokeWidth="5" strokeLinejoin="round" />
+              <path d={cuff(foilX)} fill="none" stroke={INK} strokeWidth="3" strokeLinejoin="round" opacity=".95" />
+              {/* peeled-open flaps — more of them the further it's unrolled */}
+              {[
+                { pts: `${foilX - 2},${TOP - 4} ${foilX - 20},${TOP - 16} ${foilX + 8},${TOP - 9}`, fill: "#EDF0F4" },
+                { pts: `${foilX - 1},${BOT + 4} ${foilX - 18},${BOT + 15} ${foilX + 9},${BOT + 9}`, fill: "#DDE2E9" },
+                { pts: `${foilX + 2},${TOP + 2} ${foilX - 13},${TOP + 12} ${foilX + 5},${TOP + 16}`, fill: "#C0C6D1" },
+                { pts: `${foilX + 1},${BOT - 4} ${foilX - 12},${BOT - 12} ${foilX + 4},${BOT - 16}`, fill: "#C0C6D1" },
+              ].slice(0, flapCount).map((f, i) => (
+                <polygon key={i} points={f.pts} fill={f.fill} stroke={INK} strokeWidth="2.4" strokeLinejoin="round" />
+              ))}
+            </g>
+
             {/* crumbs where the eaten part was */}
             {crumbs.map((c, i) => (
               <rect key={i} x={biteX + c.dx} y={c.y} width={c.r * 2} height={c.r * 2} rx={c.r * 0.6}
@@ -1250,14 +1298,14 @@ function BurritoMeter({ eaten, max }) {
             ))}
 
             {/* a little sparkle, because it's a great burrito */}
-            <path d="M 300 40 l 3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5 Z" fill="#FFC93C" stroke={INK} strokeWidth="2" strokeLinejoin="round" />
+            <path d="M 344 38 l 3.5 8 8 3.5 -8 3.5 -3.5 8 -3.5 -8 -8 -3.5 8 -3.5 Z" fill="#FFC93C" stroke={INK} strokeWidth="2" strokeLinejoin="round" />
             {lastBites && (
               <path d="M 60 130 l 2.8 6.4 6.4 2.8 -6.4 2.8 -2.8 6.4 -2.8 -6.4 -6.4 -2.8 6.4 -2.8 Z" fill="#FF5FA2" stroke={INK} strokeWidth="1.8" strokeLinejoin="round" />
             )}
           </g>
         ) : (
           /* pool gone: empty crumpled wrapper + crumb field */
-          <g transform="rotate(-3 170 105)">
+          <g transform="translate(20 0) rotate(-3 170 105)">
             <path d="M 128 78 L 158 64 L 186 76 L 212 62 L 232 84 L 224 112 L 236 134 L 206 148 L 172 142 L 142 150 L 120 128 L 130 104 Z"
               transform="translate(5 6)" fill={INK} opacity=".9" />
             <path d="M 128 78 L 158 64 L 186 76 L 212 62 L 232 84 L 224 112 L 236 134 L 206 148 L 172 142 L 142 150 L 120 128 L 130 104 Z"
