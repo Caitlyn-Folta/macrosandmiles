@@ -616,6 +616,12 @@ function mergeCustomFoods(aRaw, bRaw, preferA) {
     if (f && f.k && f.k[0]) byName[f.k[0]] = f;
   return JSON.stringify(Object.values(byName));
 }
+function mergeSettingsRaw(aRaw, bRaw, preferA) {
+  const a = parseOr(aRaw, {}), b = parseOr(bRaw, {});
+  /* newer side's fields win, but fields only the older side has survive —
+     a fresh device saving its Worker URL must not erase the weekend boost */
+  return JSON.stringify(preferA ? Object.assign({}, b, a) : Object.assign({}, a, b));
+}
 function mergeHistory(aRaw, bRaw, preferA) {
   const a = parseOr(aRaw, {}), b = parseOr(bRaw, {});
   return JSON.stringify(preferA ? Object.assign({}, b, a) : Object.assign({}, a, b));
@@ -642,6 +648,7 @@ async function syncMerge(remoteDoc, cfg) {
         else if (k === "sh:weight") merged = mergeWeights(localRaw, rec.v, preferLocal);
         else if (k === "mm:customfoods") merged = mergeCustomFoods(localRaw, rec.v, preferLocal);
         else if (k === "sh:history") merged = mergeHistory(localRaw, rec.v, preferLocal);
+        else if (k === "sh:settings") merged = mergeSettingsRaw(localRaw, rec.v, preferLocal);
         if (merged != null) {
           if (!deepEqRaw(merged, localRaw)) { await syncWriteRaw(k, merged); changedLocal = true; }
           /* merged result differs from remote -> it must be uploaded and win the next LWW */
@@ -1729,7 +1736,9 @@ function Streakhouse() {
       }
       prof = Object.assign({}, prof, { lastRecon: yesterday });
       if (changed) await sset(K.history, hist);
-      await sset(K.profile, prof);
+      /* write-only-on-change: a routine open must not stamp this device's
+         data as "newer" for sync, or fresh devices bully established ones */
+      if (changed || !pr || (pr.lastRecon || "") !== prof.lastRecon || (pr.tokens || 0) !== prof.tokens) await sset(K.profile, prof);
 
       setSettings(st);
       if (p) setPresets(p);
