@@ -2538,7 +2538,7 @@ function Streakhouse() {
     const DRINK_RE = /beer|wine|margarita|cocktail|martini|old fashioned|seltzer|tequila|vodka|whiskey|modelo|mimosa|sangria|spritz|claw|ros[eé]|prosecco|champagne|shot/;
     const triggers = [];
     if (/chips|queso|nacho|fried|fries/.test(addedNames)) triggers.push("chipsLogged");
-    if (DRINK_RE.test(addedNames) && allEntries.filter((e) => DRINK_RE.test(e.name.toLowerCase())).length >= 3) triggers.push("threePlusDrinks");
+    if (isPoolDay(today) && DRINK_RE.test(addedNames) && allEntries.filter((e) => DRINK_RE.test(e.name.toLowerCase())).length >= 3) triggers.push("threePlusDrinks");
     const newTotal = allEntries.reduce((a, e) => a + e.cal, 0);
     let overToday = false;
     if (poolDay) {
@@ -3209,12 +3209,12 @@ function Streakhouse() {
   const chatContent = (
     <div className="card" ref={chatCardRef}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <h2>Chat</h2>
+        <h2>Calorie Coworker</h2>
         {chatMsgs.length > 0 && <button className="tinybtn" onClick={clearChat} aria-label="Clear chat history">clear</button>}
       </div>
       {!settings.aiUrl ? (
         <div className="sub">
-          Chat needs your Cloudflare Worker — set it up once in the plan tab (✨ AI lookup → Save & test),
+          Your Calorie Coworker needs the Cloudflare Worker — set it up once in the plan tab (✨ AI lookup → Save & test),
           then log food by talking it through here. It asks before it guesses.
         </div>
       ) : (
@@ -3537,7 +3537,7 @@ function Streakhouse() {
           {chatContent}
 
           <div className="card">
-            <h2>Staples</h2>
+            <h2>The Pantry</h2>
             <div className="sub">The frequent fliers — one tap logs a serving. Tap a shelf to open it.</div>
             {STAPLE_CATS.map((cat) => {
               const catCount = day.entries.filter((en) => cat.items.some((d) => d.name === en.name)).length;
