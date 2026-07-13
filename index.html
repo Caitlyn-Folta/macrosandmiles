@@ -1637,7 +1637,7 @@ function BurritoMeter({ eaten, max }) {
 
 /* ================================================================ */
 function Streakhouse() {
-  const [tab, setTab] = useState("today");
+  const [tab, setTab] = useState("eats");
   /* phone: tabbed single column · wide screens: full dashboard */
   const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1000px)").matches);
   useEffect(() => {
@@ -2757,7 +2757,7 @@ function Streakhouse() {
   );
 
 
-  const todayContent = (
+  const eatsContent = (
     <React.Fragment>
           <div className="peptalk">
             <div className="pt-label">Today's pep talk</div>
@@ -3093,6 +3093,42 @@ function Streakhouse() {
           </div>
 
           <div className="card">
+            <h2>Quest board · {questsDone}/3 {poolDay && <span style={{ color: "#F0A800" }}>WEEKEND SET</span>}</h2>
+            {quests.map((q, i) => (
+              <div className="quest" key={q.id}>
+                <div
+                  className={`qbox ${questStatus[i] ? "done" : ""} ${q.manual && !day.closed ? "tap" : ""}`}
+                  role={q.manual ? "checkbox" : undefined}
+                  aria-checked={q.manual ? questStatus[i] : undefined}
+                  onClick={() => q.manual && toggleManualQuest(q.id)}
+                >{questStatus[i] ? "✓" : ""}</div>
+                <div>
+                  <div className={`qname ${questStatus[i] ? "done" : ""}`}>{q.label}{q.manual && <span className="qtag">tap to claim</span>}</div>
+                  <div className="qdesc">{q.desc}</div>
+                </div>
+              </div>
+            ))}
+            <div className="sub" style={{ marginTop: 8 }}>+15 XP each · +25 bonus for the full board, awarded at day close.</div>
+          </div>
+
+          <div className="card">
+            <h2>{day.closed ? "Day closed" : "Close the Day"}</h2>
+            {day.closed ? (
+              <div className="sub">Done for today. +{day.xp} XP banked. See you at lunch tomorrow.</div>
+            ) : (
+              <React.Fragment>
+                <div className="sub">The 60-second ritual: confirm food, enter steps, optional weigh-in, then the numbers reveal.</div>
+                <div className="row"><button className="ink" style={{ width: "100%" }} onClick={startClose}>Close the Day →</button></div>
+              </React.Fragment>
+            )}
+          </div>
+        </React.Fragment>
+  );
+
+  const lastWeigh = weights.length ? [...weights].sort((a, b) => (a.d < b.d ? -1 : 1))[weights.length - 1] : null;
+  const vitalsContent = (
+    <React.Fragment>
+          <div className="card">
             <h2>Steps</h2>
             <div className="bignum num">{day.steps.toLocaleString()}</div>
             <div className="sub num">of {settings.stepGoal.toLocaleString()} · {stepPct}%</div>
@@ -3126,22 +3162,14 @@ function Streakhouse() {
           </div>
 
           <div className="card">
-            <h2>Quest board · {questsDone}/3 {poolDay && <span style={{ color: "#F0A800" }}>WEEKEND SET</span>}</h2>
-            {quests.map((q, i) => (
-              <div className="quest" key={q.id}>
-                <div
-                  className={`qbox ${questStatus[i] ? "done" : ""} ${q.manual && !day.closed ? "tap" : ""}`}
-                  role={q.manual ? "checkbox" : undefined}
-                  aria-checked={q.manual ? questStatus[i] : undefined}
-                  onClick={() => q.manual && toggleManualQuest(q.id)}
-                >{questStatus[i] ? "✓" : ""}</div>
-                <div>
-                  <div className={`qname ${questStatus[i] ? "done" : ""}`}>{q.label}{q.manual && <span className="qtag">tap to claim</span>}</div>
-                  <div className="qdesc">{q.desc}</div>
-                </div>
-              </div>
-            ))}
-            <div className="sub" style={{ marginTop: 8 }}>+15 XP each · +25 bonus for the full board, awarded at day close.</div>
+            <h2>Weigh-in</h2>
+            <div className="bignum num">{lastWeigh ? lastWeigh.w : "—"}</div>
+            <div className="sub num">{lastWeigh ? `last logged ${shortDate(lastWeigh.d)}` : "no weigh-ins yet"}</div>
+            <div className="row">
+              <input inputMode="decimal" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} placeholder="Today's weight" aria-label="Weight" onKeyDown={(e) => e.key === "Enter" && saveWeight()} />
+              <button className="pri" onClick={() => saveWeight()} disabled={!weightInput}>Log</button>
+            </div>
+            <div className="sub">The trend chart lives in trends — period-day weigh-ins show pink there and sit out the pace math.</div>
           </div>
 
           <div className="card">
@@ -3162,19 +3190,7 @@ function Streakhouse() {
               </div>
             )}
           </div>
-
-          <div className="card">
-            <h2>{day.closed ? "Day closed" : "Close the Day"}</h2>
-            {day.closed ? (
-              <div className="sub">Done for today. +{day.xp} XP banked. See you at lunch tomorrow.</div>
-            ) : (
-              <React.Fragment>
-                <div className="sub">The 60-second ritual: confirm food, enter steps, optional weigh-in, then the numbers reveal.</div>
-                <div className="row"><button className="ink" style={{ width: "100%" }} onClick={startClose}>Close the Day →</button></div>
-              </React.Fragment>
-            )}
-          </div>
-        </React.Fragment>
+    </React.Fragment>
   );
 
   const trendsContent = (
@@ -3186,10 +3202,7 @@ function Streakhouse() {
               </span>
             )}</h2>
             {latestW !== null && <div className="bignum num">{latestW}</div>}
-            <div className="row">
-              <input inputMode="decimal" value={weightInput} onChange={(e) => setWeightInput(e.target.value)} placeholder="Today's weight" aria-label="Weight" onKeyDown={(e) => e.key === "Enter" && saveWeight()} />
-              <button className="pri" onClick={() => saveWeight()} disabled={!weightInput}>Log</button>
-            </div>
+            
             {weightChart.length > 1 ? (
               <div style={{ height: 180, marginTop: 14 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -3638,7 +3651,7 @@ function Streakhouse() {
 
       {!wide && (
         <div className="tabs" role="tablist">
-          {["today", "trends", "photos", "plan"].map((t) => (
+          {["eats", "vitals", "trends", "photos", "plan"].map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={`tabbtn ${tab === t ? "on" : ""}`} onClick={() => { setTab(t); if (t === "plan") prefillGoalDrafts(); }}>{t}</button>
           ))}
         </div>
@@ -3646,13 +3659,14 @@ function Streakhouse() {
 
       {wide ? (
         <div className="dash">
-          <div className="dashcol">{todayContent}</div>
-          <div className="dashcol">{trendsContent}</div>
+          <div className="dashcol">{eatsContent}</div>
+          <div className="dashcol">{vitalsContent}{trendsContent}</div>
           <div className="dashcol">{planContent}{photosContent}</div>
         </div>
       ) : (
         <React.Fragment>
-          {tab === "today" && todayContent}
+          {tab === "eats" && eatsContent}
+          {tab === "vitals" && vitalsContent}
           {tab === "trends" && trendsContent}
           {tab === "photos" && photosContent}
           {tab === "plan" && planContent}
