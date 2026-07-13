@@ -1174,7 +1174,7 @@ function FiberIcon({ size = 14 }) {
 /* ---------- Pours: one-tap drink logging, each a sticker illustration ---------- */
 const POURS = [
   { id: "espmartini", name: "espresso martini", label: "Esp. martini", cal: 240 },
-  { id: "lightbeer", name: "light beer", label: "Light beer", cal: 100 },
+  { id: "skinnymarg", name: "skinny margarita", label: "Skinny marg", cal: 140 },
   { id: "wine", name: "wine", label: "Wine", cal: 125 },
   { id: "champagne", name: "champagne", label: "Champagne", cal: 95 },
   { id: "marg", name: "margarita", label: "Marg", cal: 250 },
@@ -1210,13 +1210,16 @@ function DrinkIcon({ kind, size = 38 }) {
         <path d="M30 8 l 1.6 3.6 3.6 1.6 -3.6 1.6 -1.6 3.6 -1.6 -3.6 -3.6 -1.6 3.6 -1.6 Z" fill="#FFC93C" stroke={INK_ICON} strokeWidth="1.4" strokeLinejoin="round" />
       </g>
     ),
-    lightbeer: (
+    skinnymarg: (
       <g>
-        <rect x="15" y="10" width="16" height="30" rx="4" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
-        <rect x="15" y="10" width="16" height="30" rx="4" fill="#7ED957" {...S} />
-        <rect x="15" y="10" width="16" height="6.5" rx="3" fill="#C9CFD9" {...S} />
-        <rect x="17.5" y="21" width="11" height="10" rx="2.5" fill="#FFF7E6" stroke={INK_ICON} strokeWidth="1.8" />
-        <path d="M20 26 h 6" stroke={INK_ICON} strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M16 11 h 14 l -1.2 27 h -11.6 Z" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <path d="M16 11 h 14 l -1.2 27 h -11.6 Z" fill="#FFF" {...S} />
+        <path d="M17 19 h 12 l -0.9 17 h -10.2 Z" fill="#D8F5C0" stroke={INK_ICON} strokeWidth="1.6" />
+        <rect x="19" y="21.5" width="6.5" height="6.5" rx="1.4" fill="#FFF7E6" stroke={INK_ICON} strokeWidth="1.5" transform="rotate(-10 22.2 24.7)" opacity=".92" />
+        <path d="M27 9 L 21 20" stroke="#FF5FA2" strokeWidth="3" strokeLinecap="round" />
+        <path d="M27 9 L 21 20" stroke={INK_ICON} strokeWidth="0.9" strokeLinecap="round" opacity=".35" />
+        <circle cx="31" cy="13" r="4.4" fill="#7ED957" {...S} strokeWidth="2" />
+        <path d="M31 9.2 v 7.6 M 27.2 13 h 7.6" stroke="#FFF7E6" strokeWidth="1.3" />
       </g>
     ),
     wine: (
