@@ -673,10 +673,19 @@ async function syncNow(reason) {
   syncBusy = true;
   try {
     let result = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const res = await fetch(cfg.url + "/sync", { headers: { "x-sync-code": cfg.code } });
-      if (!res.ok) throw new Error(`sync HTTP ${res.status}`);
-      const remote = await res.json();
+    /* Workers KV reads are eventually consistent: after another device
+       pushes, a GET can return stale data for up to a minute. A rejected
+       PUT (409) carries the CURRENT stored doc in its body, so on conflict
+       we merge against that directly instead of re-reading stale cache. */
+    let authoritative = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      let remote;
+      if (authoritative) { remote = authoritative; authoritative = null; }
+      else {
+        const res = await fetch(cfg.url + "/sync", { headers: { "x-sync-code": cfg.code } });
+        if (!res.ok) throw new Error(`sync HTTP ${res.status}`);
+        remote = await res.json();
+      }
       const { changedLocal, pushNeeded } = await syncMerge(remote.data, syncCfg() || cfg);
       const fresh = syncCfg() || cfg;
       if (!pushNeeded && !fresh.dirty && remote.rev > 0) {
@@ -693,14 +702,18 @@ async function syncNow(reason) {
         headers: { "Content-Type": "application/json", "x-sync-code": cfg.code },
         body: JSON.stringify({ baseRev: remote.rev, data: doc }),
       });
-      if (put.status === 409) { syncCfgMerge({ dirty: true }); continue; } /* another device pushed first — pull and merge again */
+      if (put.status === 409) {
+        syncCfgMerge({ dirty: true });
+        try { authoritative = await put.json(); } catch { authoritative = null; } /* merge against what the server actually holds */
+        continue;
+      }
       if (!put.ok) { syncCfgMerge({ dirty: true }); throw new Error(`sync HTTP ${put.status}`); }
       const fin = await put.json();
       syncCfgMerge({ rev: fin.rev, last: Date.now() });
       result = { ok: true, changedLocal };
       break;
     }
-    if (!result) throw new Error("devices kept racing — try again");
+    if (!result) throw new Error("sync is catching up — it retries by itself, give it a minute");
     if (syncOnStatus) syncOnStatus({ ok: true, at: Date.now() });
     if (result.changedLocal && syncOnChange) syncOnChange();
     return result;
