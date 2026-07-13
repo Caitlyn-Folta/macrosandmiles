@@ -1324,6 +1324,9 @@ const STAPLE_CATS = [
       { id: "turkeyslice", name: "deli turkey slice", label: "Deli turkey", cal: 30, p: 5, f: 0 },
       { id: "salami", name: "salami slice", label: "Salami", cal: 40, p: 2, f: 0 },
       { id: "chomps", name: "chomps stick", label: "Chomps", cal: 100, p: 10, f: 0 },
+      { id: "proteinpowder", name: "protein powder scoop", label: "Protein scoop", cal: 110, p: 20, f: 0 },
+      { id: "parm", name: "parmesan", label: "Parm", cal: 45, p: 4, f: 0 },
+      { id: "feta", name: "feta", label: "Feta", cal: 75, p: 4, f: 0 },
     ],
   },
   {
@@ -1373,6 +1376,7 @@ const STAPLE_CATS = [
     id: "snacks", label: "Snacks",
     items: [
       { id: "popchips", name: "pop chips", label: "Pop chips", cal: 130, p: 1, f: 1 },
+      { id: "pitabites", name: "pita bite crackers", label: "Pita bites", cal: 130, p: 3, f: 1 },
       { id: "popcorn", name: "skinny pop popcorn", label: "Popcorn", cal: 150, p: 2, f: 3 },
       { id: "tortillachips", name: "tortilla chips", label: "Tortilla ch.", cal: 140, p: 2, f: 1 },
       { id: "potatochips", name: "potato chips", label: "Potato chips", cal: 150, p: 2, f: 1 },
@@ -1385,6 +1389,17 @@ const STAPLE_CATS = [
       { id: "yasso", name: "yasso bar", label: "Yasso bar", cal: 100, p: 5, f: 0 },
       { id: "icecream", name: "1/2 cup ice cream", label: "Ice cream", cal: 140, p: 2, f: 0 },
       { id: "nerds", name: "nerd clusters handful", label: "Nerd clusters", cal: 90, p: 0, f: 0 },
+    ],
+  },
+  {
+    id: "sauces", label: "Sauces",
+    items: [
+      { id: "lfmayo", name: "low fat mayo", label: "LF mayo", cal: 35, p: 0, f: 0 },
+      { id: "guac", name: "guac", label: "Guac", cal: 50, p: 1, f: 2 },
+      { id: "ranch", name: "bolthouse yogurt ranch", label: "Yog. ranch", cal: 45, p: 1, f: 0 },
+      { id: "caesar", name: "bolthouse yogurt caesar", label: "Yog. caesar", cal: 45, p: 1, f: 0 },
+      { id: "oliveoil", name: "olive oil", label: "Olive oil", cal: 120, p: 0, f: 0 },
+      { id: "avospray", name: "avocado oil spray", label: "Avo spray", cal: 10, p: 0, f: 0 },
     ],
   },
 ];
@@ -1811,6 +1826,95 @@ function StapleIcon({ kind, size = 38 }) {
         <path d="M12 28 C 17 19 27 13 34 13 C 32 21 24 29 13 32 Z" fill="#52B52E" {...S} />
         <path d="M15 27 C 19 21 26 16 31 15" fill="none" stroke="#7ED957" strokeWidth="2.4" strokeLinecap="round" />
         <path d="M11 18 C 15 13 21 10 26 10 C 24 15 19 19 12 21 Z" fill="#7ED957" {...S} strokeWidth="2.2" />
+      </g>
+    ),
+    proteinpowder: (
+      <g>
+        {sh("M15 18 h 16 l -2 18 h -12 Z")}
+        <path d="M15 18 h 16 l -2 18 h -12 Z" fill="#FFFDF8" {...S} />
+        <path d="M16 24 h 14 l -1 11 h -12 Z" fill="#F2D8A0" stroke={INK_ICON} strokeWidth="1.6" />
+        <path d="M18 18 c 0 -4 2 -7 5 -7 s 5 3 5 7" fill="none" {...S} strokeWidth="2.2" />
+        <path d="M17 14 c 2 -1.5 4 -1.5 6 0" fill="none" stroke="#FBEBC8" strokeWidth="2.4" strokeLinecap="round" />
+      </g>
+    ),
+    parm: (
+      <g>
+        {sh("M12 30 L 32 16 L 35 32 H 12 Z")}
+        <path d="M12 30 L 32 16 L 35 32 H 12 Z" fill="#FBEBC8" {...S} />
+        <path d="M12 30 L 32 16 l 1 5 L 16 32 Z" fill="#F0D9A8" stroke={INK_ICON} strokeWidth="1.6" />
+        <circle cx="24" cy="28" r="1" fill="#E0C08A" /><circle cx="29" cy="26" r="0.9" fill="#E0C08A" />
+        <path d="M14 35 h 3 M 19 36 h 2.5 M 24 35.5 h 3" stroke={INK_ICON} strokeWidth="1.6" strokeLinecap="round" />
+      </g>
+    ),
+    feta: (
+      <g>
+        {sh("M14 16 h 14 l 5 5 v 12 h -19 Z")}
+        <path d="M14 16 h 14 l 5 5 v 12 h -19 Z" fill="#FFFDF8" {...S} />
+        <path d="M28 16 l 5 5 h -19 l -0 -5 Z" fill="#F4F6F9" stroke={INK_ICON} strokeWidth="1.6" />
+        <circle cx="19" cy="27" r="0.9" fill="#D5DAE2" /><circle cx="25" cy="25" r="0.8" fill="#D5DAE2" /><circle cx="28" cy="29" r="0.9" fill="#D5DAE2" />
+      </g>
+    ),
+    pitabites: (
+      <g>
+        {sh("M13 14 h 13 v 13 h -13 Z")}
+        <rect x="13" y="14" width="13" height="13" rx="2.5" fill="#F2D8A0" {...S} strokeWidth="2.2" transform="rotate(-6 19.5 20.5)" />
+        <rect x="20" y="21" width="13" height="13" rx="2.5" fill="#FBEBC8" {...S} strokeWidth="2.2" transform="rotate(7 26.5 27.5)" />
+        <circle cx="18" cy="19" r="0.8" fill="#D9B878" /><circle cx="22" cy="17" r="0.7" fill="#D9B878" />
+        <circle cx="25" cy="26" r="0.8" fill="#D9B878" /><circle cx="29" cy="29" r="0.7" fill="#D9B878" />
+      </g>
+    ),
+    lfmayo: (
+      <g>
+        {sh("M15 15 h 16 v 21 a 3 3 0 0 1 -3 3 h -10 a 3 3 0 0 1 -3 -3 Z")}
+        <path d="M15 15 h 16 v 21 a 3 3 0 0 1 -3 3 h -10 a 3 3 0 0 1 -3 -3 Z" fill="#FBEBC8" {...S} />
+        <rect x="13.5" y="10" width="19" height="6" rx="2.5" fill="#6EC1FF" {...S} strokeWidth="2.2" />
+        <rect x="18" y="22" width="10" height="9" rx="2" fill="#FFFDF8" stroke={INK_ICON} strokeWidth="1.6" />
+        <path d="M20 26.5 h 6" stroke="#6EC1FF" strokeWidth="1.8" strokeLinecap="round" />
+      </g>
+    ),
+    guac: (
+      <g>
+        {sh("M12 24 h 22 a 11 8 0 0 1 -22 0 Z")}
+        <path d="M14 22 c 2 -3 5 -1.5 6 -3 c 3 2.5 5 0 6 2 c 3 -1 5 1 6 1.5 l -1 2.5 h -16 Z" fill="#7ED957" stroke={INK_ICON} strokeWidth="2" strokeLinejoin="round" />
+        <path d="M12 24 h 22 a 11 8 0 0 1 -22 0 Z" fill="#52B52E" {...S} />
+        <circle cx="20" cy="20" r="1.1" fill="#FF6B6B" /><circle cx="26" cy="19.5" r="1" fill="#FF6B6B" />
+        <path d="M30 13 a 4.5 6 0 0 1 3 5" fill="none" stroke={INK_ICON} strokeWidth="2" strokeLinecap="round" />
+      </g>
+    ),
+    ranch: (
+      <g>
+        {sh("M18 14 h 10 l 2 6 v 16 a 3 3 0 0 1 -3 3 h -8 a 3 3 0 0 1 -3 -3 V 20 Z")}
+        <path d="M18 14 h 10 l 2 6 v 16 a 3 3 0 0 1 -3 3 h -8 a 3 3 0 0 1 -3 -3 V 20 Z" fill="#FFFDF8" {...S} />
+        <rect x="19.5" y="9" width="7" height="6" rx="2" fill="#7ED957" {...S} strokeWidth="2" />
+        <rect x="18.5" y="24" width="9" height="9" rx="2" fill="#D8F5C0" stroke={INK_ICON} strokeWidth="1.6" />
+        <circle cx="21.5" cy="28" r="0.8" fill="#52B52E" /><circle cx="24.5" cy="29.5" r="0.8" fill="#52B52E" />
+      </g>
+    ),
+    caesar: (
+      <g>
+        {sh("M18 14 h 10 l 2 6 v 16 a 3 3 0 0 1 -3 3 h -8 a 3 3 0 0 1 -3 -3 V 20 Z")}
+        <path d="M18 14 h 10 l 2 6 v 16 a 3 3 0 0 1 -3 3 h -8 a 3 3 0 0 1 -3 -3 V 20 Z" fill="#FBEBC8" {...S} />
+        <rect x="19.5" y="9" width="7" height="6" rx="2" fill="#F0A800" {...S} strokeWidth="2" />
+        <rect x="18.5" y="24" width="9" height="9" rx="2" fill="#FFC93C" stroke={INK_ICON} strokeWidth="1.6" />
+        <path d="M20.5 28.5 h 5" stroke={INK_ICON} strokeWidth="1.4" strokeLinecap="round" />
+      </g>
+    ),
+    oliveoil: (
+      <g>
+        {sh("M21 8 h 4 v 8 c 4 2 6 5 6 10 v 8 a 3 3 0 0 1 -3 3 h -10 a 3 3 0 0 1 -3 -3 v -8 c 0 -5 2 -8 6 -10 Z")}
+        <path d="M21 8 h 4 v 8 c 4 2 6 5 6 10 v 8 a 3 3 0 0 1 -3 3 h -10 a 3 3 0 0 1 -3 -3 v -8 c 0 -5 2 -8 6 -10 Z" fill="#C9D957" {...S} />
+        <path d="M16 27 c 0 -4 1.5 -6.5 5 -8.5" fill="none" stroke="#E8F0A0" strokeWidth="2.4" strokeLinecap="round" />
+        <rect x="20" y="6" width="6" height="4" rx="1.5" fill="#5C3A21" {...S} strokeWidth="2" />
+      </g>
+    ),
+    avospray: (
+      <g>
+        {sh("M17 16 h 12 v 20 a 3 3 0 0 1 -3 3 h -6 a 3 3 0 0 1 -3 -3 Z")}
+        <path d="M17 16 h 12 v 20 a 3 3 0 0 1 -3 3 h -6 a 3 3 0 0 1 -3 -3 Z" fill="#7ED957" {...S} />
+        <rect x="19" y="11" width="8" height="5" rx="1.5" fill="#C9CFD9" {...S} strokeWidth="2" />
+        <rect x="21" y="8" width="4" height="4" rx="1" fill="#52B52E" {...S} strokeWidth="1.8" />
+        <path d="M28 8 l 4 -2 M 28.5 10.5 l 4.5 0 M 28 5.8 l 3 -3" stroke={INK_ICON} strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M19 22 h 8 M 19 26 h 8" stroke="#D8F5C0" strokeWidth="2" strokeLinecap="round" />
       </g>
     ),
   };
