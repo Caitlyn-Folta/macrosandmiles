@@ -22,6 +22,12 @@ App icons
 
 Design system. The visual language follows the Macros & Miles design system (modern 90s bubble-sticker: candy brights on warm cream, ink outlines, hard offset sticker shadows, Titan One display / Baloo 2 body / Space Mono stats, ink text on all candy colors, halftone dot texture). Tokens are applied directly as hex values in index.html's style block. Protein, fiber, and the Pours drinks all use hand-drawn SVG sticker icons (ProteinIcon/FiberIcon/DrinkIcon in index.html) rather than emoji; the remaining emoji (snack judge, quests) are load-bearing content.
 
+Staples. A one-tap food logger on the today tab — thirteen sticker-icon buttons for the frequent fliers (egg, Fairlife lowfat milk, lowfat cottage cheese, lowfat cheese, ¼ avocado, lowfat greek yogurt, raspberries, strawberries, blueberries, cherry tomatoes, mini cucumbers, dark chocolate square, Skinny Pop popcorn), each logging one serving with calories/protein/fiber. Badges count today's taps. The same foods live in FOOD_DB so typing them works too.
+
+🧾 Receipt scan. The "Scan a receipt" button in the tracker card photographs a grocery receipt: OCR runs on-device (tesseract.js), the raw text goes to the Worker's /receipt endpoint, and Claude extracts the food items — expanding receipt abbreviations ("KASHI GOLEAN" → kashi go lean cereal) — with per-serving nutrition estimates. The app shows an editable checklist; checked items save to the custom foods database (mm:customfoods:v1), so everything from the grocery run resolves instantly when typed or dictated later. Requires the AI Worker; items save to the database rather than logging to today.
+
+Period tracker now lives on the today view, directly above the Close the Day card (it left the plan tab so marking a day is one tap from the main screen).
+
 Pours. A one-tap drink logger on the today tab: eight sticker-style drink icons (beer, light beer, wine, margarita, martini, old fashioned, seltzer, shot) with per-serving calories from the built-in table. Tapping logs the drink as a normal entry (editable/deletable like any other, counts toward the day and the weekend pool), and a badge on each icon shows today's count. The 3+-drinks data-reactive humor triggers pick these up like typed entries.
 
 Rules to remember

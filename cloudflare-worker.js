@@ -140,6 +140,43 @@ const CHAT_TOOLS = [
   },
 ];
 
+/* ---- receipt mode: photo a grocery receipt, pre-load your food database ----
+   The app OCRs the receipt on-device (tesseract) and sends the raw text here;
+   Claude extracts the food items, expands receipt abbreviations, and returns
+   per-serving nutrition estimates. The app shows a checklist and saves the
+   keepers to the on-device custom foods database. */
+const RECEIPT_SYSTEM =
+  "You read raw OCR text from a grocery receipt. Extract FOOD and DRINK items " +
+  "only — skip totals, tax, coupons, deposits, bags, and non-food goods. " +
+  "Receipt lines are heavily abbreviated ('GV SHRD MOZZ', 'KASHI GOLEAN 12.3OZ') " +
+  "— expand each to a plain lowercase food name someone would type in a food " +
+  "journal. For each item estimate typical PER-SERVING nutrition: calories, " +
+  "protein grams, fiber grams, and grams per serving. One entry per distinct " +
+  "product; ignore quantities and prices. OCR is noisy — make your best read.";
+
+const RECEIPT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "cal", "protein", "fiber", "grams"],
+        properties: {
+          name: { type: "string", description: "plain food name, e.g. 'kashi go lean cereal'" },
+          cal: { type: "integer", description: "calories per typical serving" },
+          protein: { type: "number" },
+          fiber: { type: "number" },
+          grams: { type: "number", description: "grams per serving" },
+        },
+      },
+    },
+  },
+};
+
 export default {
   async fetch(request, env) {
     const cors = {
@@ -187,6 +224,40 @@ export default {
         return json({ rev: next.rev });
       }
       return json({ error: "GET or PUT only on /sync" }, 405);
+    }
+
+    /* ---- /receipt: grocery receipt OCR text -> per-serving food entries ---- */
+    if (new URL(request.url).pathname.endsWith("/receipt")) {
+      if (request.method !== "POST") return json({ error: "POST { text }" }, 405);
+      if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY secret is not set on this Worker" }, 500);
+      let rbody;
+      try { rbody = await request.json(); } catch { return json({ error: "body must be JSON" }, 400); }
+      const rtext = String(rbody.text || "").slice(0, 5000).trim();
+      if (!rtext) return json({ error: "text is required" }, 400);
+      const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": env.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 2500,
+          system: RECEIPT_SYSTEM,
+          output_config: { format: { type: "json_schema", schema: RECEIPT_SCHEMA } },
+          messages: [{ role: "user", content: rtext }],
+        }),
+      });
+      if (!upstream.ok) {
+        const detail = await upstream.text().catch(() => "");
+        return json({ error: `Anthropic API ${upstream.status}`, detail: detail.slice(0, 300) }, 502);
+      }
+      const rdata = await upstream.json();
+      try {
+        const parsed = JSON.parse(rdata.content[0].text);
+        return json({ items: Array.isArray(parsed.items) ? parsed.items : [] });
+      } catch { return json({ error: "model returned unparseable output" }, 502); }
     }
 
     /* ---- /chat: one model turn of the conversational tracker ---- */
