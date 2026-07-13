@@ -1306,20 +1306,67 @@ function DrinkIcon({ kind, size = 38 }) {
 }
 
 /* ---------- Staples: one-tap logging for the frequent fliers ---------- */
-const STAPLES = [
-  { id: "egg", name: "egg", label: "Egg", cal: 75, p: 6, f: 0 },
-  { id: "milk", name: "fairlife lowfat milk", label: "Milk", cal: 110, p: 13, f: 0 },
-  { id: "cottage", name: "lowfat cottage cheese", label: "Cottage ch.", cal: 90, p: 14, f: 0 },
-  { id: "cheese", name: "lowfat cheese", label: "Cheese", cal: 70, p: 8, f: 0 },
-  { id: "avocado", name: "1/4 avocado", label: "\u00bc Avocado", cal: 60, p: 1, f: 3 },
-  { id: "yogurt", name: "lowfat greek yogurt", label: "Greek yog.", cal: 150, p: 20, f: 0 },
-  { id: "raspberry", name: "raspberries", label: "Raspberries", cal: 65, p: 1, f: 8 },
-  { id: "strawberry", name: "strawberries", label: "Strawberries", cal: 50, p: 1, f: 3 },
-  { id: "blueberry", name: "blueberries", label: "Blueberries", cal: 85, p: 1, f: 4 },
-  { id: "tomato", name: "cherry tomatoes", label: "Cherry toms", cal: 30, p: 1, f: 2 },
-  { id: "cuke", name: "mini cucumbers", label: "Mini cukes", cal: 30, p: 1, f: 1 },
-  { id: "chocolate", name: "dark chocolate square", label: "Dark choc.", cal: 55, p: 1, f: 1 },
-  { id: "popcorn", name: "skinny pop popcorn", label: "Popcorn", cal: 150, p: 2, f: 3 },
+const STAPLE_CATS = [
+  {
+    id: "proteins", label: "Proteins",
+    items: [
+      { id: "egg", name: "egg", label: "Egg", cal: 75, p: 6, f: 0 },
+      { id: "milk", name: "fairlife lowfat milk", label: "Milk", cal: 110, p: 13, f: 0 },
+      { id: "cottage", name: "lowfat cottage cheese", label: "Cottage ch.", cal: 90, p: 14, f: 0 },
+      { id: "cheese", name: "lowfat cheese", label: "Cheese", cal: 70, p: 8, f: 0 },
+      { id: "yogurt", name: "lowfat greek yogurt", label: "Greek yog.", cal: 150, p: 20, f: 0 },
+      { id: "chickenthigh", name: "chicken thigh", label: "Chix thigh", cal: 150, p: 21, f: 0 },
+      { id: "chickenbreast", name: "chicken breast", label: "Chix breast", cal: 185, p: 35, f: 0 },
+      { id: "leanbeef", name: "94% lean beef", label: "Lean beef", cal: 180, p: 26, f: 0 },
+      { id: "bacon", name: "bacon slice", label: "Bacon", cal: 35, p: 3, f: 0 },
+      { id: "pork", name: "pork tenderloin", label: "Pork tender.", cal: 135, p: 26, f: 0 },
+      { id: "babybel", name: "babybel cheese", label: "Babybel", cal: 70, p: 5, f: 0 },
+      { id: "turkeyslice", name: "deli turkey slice", label: "Deli turkey", cal: 30, p: 5, f: 0 },
+      { id: "salami", name: "salami slice", label: "Salami", cal: 40, p: 2, f: 0 },
+    ],
+  },
+  {
+    id: "fruit", label: "Fruiti-tutti",
+    items: [
+      { id: "raspberry", name: "raspberries", label: "Raspberries", cal: 65, p: 1, f: 8 },
+      { id: "strawberry", name: "strawberries", label: "Strawberries", cal: 50, p: 1, f: 3 },
+      { id: "blueberry", name: "blueberries", label: "Blueberries", cal: 85, p: 1, f: 4 },
+      { id: "watermelon", name: "watermelon", label: "Watermelon", cal: 45, p: 1, f: 1 },
+      { id: "apple", name: "apple", label: "Apple", cal: 95, p: 0, f: 4 },
+      { id: "mandarin", name: "mandarin", label: "Mandarin", cal: 50, p: 1, f: 2 },
+      { id: "peach", name: "peach", label: "Peach", cal: 60, p: 1, f: 2 },
+    ],
+  },
+  {
+    id: "veg", label: "Veg",
+    items: [
+      { id: "tomato", name: "cherry tomatoes", label: "Cherry toms", cal: 30, p: 1, f: 2 },
+      { id: "cuke", name: "mini cucumbers", label: "Mini cukes", cal: 30, p: 1, f: 1 },
+      { id: "avocado", name: "1/4 avocado", label: "\u00bc Avocado", cal: 60, p: 1, f: 3 },
+      { id: "lettuce", name: "lettuce", label: "Lettuce", cal: 10, p: 1, f: 1 },
+      { id: "broccoli", name: "broccoli", label: "Broccoli", cal: 55, p: 4, f: 5 },
+      { id: "peas", name: "peas", label: "Peas", cal: 60, p: 4, f: 4 },
+      { id: "carrots", name: "baby carrots", label: "Baby carrots", cal: 30, p: 1, f: 2 },
+    ],
+  },
+  {
+    id: "snacks", label: "Snacks",
+    items: [
+      { id: "popchips", name: "pop chips", label: "Pop chips", cal: 130, p: 1, f: 1 },
+      { id: "popcorn", name: "skinny pop popcorn", label: "Popcorn", cal: 150, p: 2, f: 3 },
+      { id: "tortillachips", name: "tortilla chips", label: "Tortilla ch.", cal: 140, p: 2, f: 1 },
+      { id: "potatochips", name: "potato chips", label: "Potato chips", cal: 150, p: 2, f: 1 },
+    ],
+  },
+  {
+    id: "sweets", label: "Sweets",
+    items: [
+      { id: "chocolate", name: "dark chocolate square", label: "Dark choc.", cal: 55, p: 1, f: 1 },
+      { id: "yasso", name: "yasso bar", label: "Yasso bar", cal: 100, p: 5, f: 0 },
+      { id: "icecream", name: "1/2 cup ice cream", label: "Ice cream", cal: 140, p: 2, f: 0 },
+      { id: "nerds", name: "nerd clusters handful", label: "Nerd clusters", cal: 90, p: 0, f: 0 },
+    ],
+  },
 ];
 
 function StapleIcon({ kind, size = 38 }) {
@@ -1442,6 +1489,184 @@ function StapleIcon({ kind, size = 38 }) {
         <circle cx="23" cy="14.5" r="4" fill="#FFFDF8" {...S} strokeWidth="2" />
         <circle cx="29" cy="17" r="3.4" fill="#FFF7E6" {...S} strokeWidth="2" />
         <circle cx="21.5" cy="13.5" r="1" fill="#FFC93C" /><circle cx="28" cy="16" r="0.9" fill="#FFC93C" />
+      </g>
+    ),
+    chickenthigh: (
+      <g>
+        {sh("M28 10 a 9 9 0 0 1 5 15 c -3 4 -8 5 -12 3 L 15 34 a 3 3 0 1 1 -4 -4 a 3 3 0 1 1 4 -4 l 4 -5 c -2 -5 2 -10 9 -11 Z")}
+        <path d="M28 10 a 9 9 0 0 1 5 15 c -3 4 -8 5 -12 3 L 15 34 a 3 3 0 1 1 -4 -4 a 3 3 0 1 1 4 -4 l 4 -5 c -2 -5 2 -10 9 -11 Z" fill="#FF9F6B" {...S} />
+        <path d="M26 15 a 5 5 0 0 1 6 3" fill="none" stroke="#FFF7E6" strokeWidth="2.2" strokeLinecap="round" />
+      </g>
+    ),
+    chickenbreast: (
+      <g>
+        {sh("M14 28 C 10 18 20 10 29 12 C 37 14 38 24 32 30 C 26 36 17 36 14 28 Z")}
+        <path d="M14 28 C 10 18 20 10 29 12 C 37 14 38 24 32 30 C 26 36 17 36 14 28 Z" fill="#FFD9B0" {...S} />
+        <path d="M17 22 l 12 8 M 21 17 l 12 8" stroke="#E8A87C" strokeWidth="2.4" strokeLinecap="round" />
+      </g>
+    ),
+    leanbeef: (
+      <g>
+        {sh("M11 24 a 12 7 0 0 1 24 0 v 5 a 12 7 0 0 1 -24 0 Z")}
+        <path d="M11 24 a 12 7 0 0 1 24 0 v 5 a 12 7 0 0 1 -24 0 Z" fill="#A05A3C" {...S} />
+        <ellipse cx="23" cy="24" rx="12" ry="7" fill="#C77B52" stroke={INK_ICON} strokeWidth="2" />
+        <path d="M17 23.5 h 4 M 25 25.5 h 4" stroke="#8B4A30" strokeWidth="1.8" strokeLinecap="round" />
+      </g>
+    ),
+    bacon: (
+      <g>
+        {sh("M12 12 c 6 4 4 8 10 12 s 4 8 10 12 l -5 3 c -6 -4 -4 -8 -10 -12 s -4 -8 -10 -12 Z")}
+        <path d="M12 12 c 6 4 4 8 10 12 s 4 8 10 12 l -5 3 c -6 -4 -4 -8 -10 -12 s -4 -8 -10 -12 Z" fill="#E0426E" {...S} />
+        <path d="M13.5 14.5 c 5 3.6 3.8 7.4 9 11 s 4 7.4 9 11" fill="none" stroke="#FFD9C4" strokeWidth="2.2" strokeLinecap="round" />
+      </g>
+    ),
+    pork: (
+      <g>
+        {sh("M12 20 a 11 9 0 0 1 22 0 v 6 a 11 9 0 0 1 -22 0 Z")}
+        <path d="M12 20 a 11 9 0 0 1 22 0 v 6 a 11 9 0 0 1 -22 0 Z" fill="#E8A87C" {...S} />
+        <path d="M17 14.5 v 19 M 25 12.8 v 21 M 31 15 v 18" stroke="#FFF7E6" strokeWidth="2" strokeLinecap="round" opacity=".85" />
+      </g>
+    ),
+    babybel: (
+      <g>
+        {sh("M23 13 a 11 11 0 1 0 0.1 0 Z")}
+        <circle cx="23" cy="24" r="11" fill="#FF4757" {...S} />
+        <circle cx="23" cy="24" r="6.5" fill="#FF6B7E" stroke={INK_ICON} strokeWidth="1.6" />
+        <path d="M23 13 L 34 20 L 30 24 Z" fill="#FFFDF8" stroke={INK_ICON} strokeWidth="2" strokeLinejoin="round" />
+      </g>
+    ),
+    turkeyslice: (
+      <g>
+        {sh("M13 18 q 10 -6 20 0 q 2 6 0 12 q -10 6 -20 0 q -2 -6 0 -12 Z")}
+        <path d="M13 18 q 10 -6 20 0 q 2 6 0 12 q -10 6 -20 0 q -2 -6 0 -12 Z" fill="#FFD9C4" {...S} />
+        <path d="M15 24 q 8 -4 16 0" fill="none" stroke="#E8A87C" strokeWidth="2" strokeLinecap="round" />
+      </g>
+    ),
+    salami: (
+      <g>
+        {sh("M23 13 a 11 11 0 1 0 0.1 0 Z")}
+        <circle cx="23" cy="24" r="11" fill="#E0426E" {...S} />
+        <circle cx="23" cy="24" r="8.5" fill="#FF6B7E" stroke={INK_ICON} strokeWidth="1.5" />
+        <circle cx="20" cy="21" r="1.4" fill="#FFFDF8" /><circle cx="26" cy="23" r="1.2" fill="#FFFDF8" />
+        <circle cx="22" cy="27.5" r="1.3" fill="#FFFDF8" /><circle cx="27" cy="27" r="1" fill="#FFFDF8" />
+      </g>
+    ),
+    lettuce: (
+      <g>
+        {sh("M12 26 a 4.5 4.5 0 0 1 2 -8 a 5 5 0 0 1 4 -5 a 6 6 0 0 1 10 0 a 5 5 0 0 1 4 5 a 4.5 4.5 0 0 1 2 8 a 11 8 0 0 1 -22 0 Z")}
+        <path d="M12 26 a 4.5 4.5 0 0 1 2 -8 a 5 5 0 0 1 4 -5 a 6 6 0 0 1 10 0 a 5 5 0 0 1 4 5 a 4.5 4.5 0 0 1 2 8 a 11 8 0 0 1 -22 0 Z" fill="#7ED957" {...S} />
+        <path d="M18 20 c 1 5 1 9 0 12 M 23 18 v 15 M 28 20 c -1 5 -1 9 0 12" fill="none" stroke="#52B52E" strokeWidth="1.8" strokeLinecap="round" />
+      </g>
+    ),
+    broccoli: (
+      <g>
+        {sh("M14 20 a 5 5 0 0 1 4 -7 a 6 6 0 0 1 10 0 a 5 5 0 0 1 4 7 a 4 4 0 0 1 -3 6 h -12 a 4 4 0 0 1 -3 -6 Z")}
+        <path d="M20 26 l -1.5 9 h 9 L 26 26 Z" fill="#D8F5C0" {...S} strokeWidth="2.2" />
+        <path d="M14 20 a 5 5 0 0 1 4 -7 a 6 6 0 0 1 10 0 a 5 5 0 0 1 4 7 a 4 4 0 0 1 -3 6 h -12 a 4 4 0 0 1 -3 -6 Z" fill="#52B52E" {...S} />
+        <circle cx="19" cy="17" r="1.2" fill="#2F7A1B" /><circle cx="25" cy="15.5" r="1.2" fill="#2F7A1B" /><circle cx="28" cy="20" r="1.2" fill="#2F7A1B" />
+      </g>
+    ),
+    peas: (
+      <g>
+        {sh("M11 27 C 14 16 26 10 35 14 C 34 26 24 33 11 27 Z")}
+        <path d="M11 27 C 14 16 26 10 35 14 C 34 26 24 33 11 27 Z" fill="#7ED957" {...S} />
+        <circle cx="18" cy="23" r="3.4" fill="#52B52E" stroke={INK_ICON} strokeWidth="1.8" />
+        <circle cx="25" cy="21" r="3.4" fill="#52B52E" stroke={INK_ICON} strokeWidth="1.8" />
+        <circle cx="31" cy="18.5" r="3" fill="#52B52E" stroke={INK_ICON} strokeWidth="1.8" />
+      </g>
+    ),
+    carrots: (
+      <g>
+        {sh("M15 14 l 6 2 l -6 18 Z")}
+        <path d="M15 14 l 7 2.5 L 17 35 Z" fill="#FF9F3C" {...S} strokeWidth="2.2" />
+        <path d="M26 12 l 7 2.5 L 28 33 Z" fill="#FF9F3C" {...S} strokeWidth="2.2" />
+        <path d="M16 13 l 2 -4 M 19 14 l 3 -3" stroke="#52B52E" strokeWidth="2.2" strokeLinecap="round" />
+        <path d="M27 11 l 2 -4 M 30 12 l 3 -3" stroke="#52B52E" strokeWidth="2.2" strokeLinecap="round" />
+      </g>
+    ),
+    watermelon: (
+      <g>
+        {sh("M11 20 h 24 a 12 12 0 0 1 -24 0 Z")}
+        <path d="M11 20 h 24 a 12 12 0 0 1 -24 0 Z" fill="#7ED957" {...S} />
+        <path d="M13.5 20 h 19 a 9.5 9.5 0 0 1 -19 0 Z" fill="#FF5FA2" stroke={INK_ICON} strokeWidth="1.6" />
+        <circle cx="19" cy="24" r="1.1" fill={INK_ICON} /><circle cx="24" cy="26.5" r="1.1" fill={INK_ICON} /><circle cx="28" cy="23.5" r="1.1" fill={INK_ICON} />
+      </g>
+    ),
+    apple: (
+      <g>
+        {sh("M23 15 c 7 -3 12 2 11 9 c -1 7 -6 12 -11 12 c -5 0 -10 -5 -11 -12 c -1 -7 4 -12 11 -9 Z")}
+        <path d="M23 15 c 7 -3 12 2 11 9 c -1 7 -6 12 -11 12 c -5 0 -10 -5 -11 -12 c -1 -7 4 -12 11 -9 Z" fill="#FF6B6B" {...S} />
+        <path d="M23 15 c 0 -3 1 -5 3 -6" fill="none" stroke={INK_ICON} strokeWidth="2.2" strokeLinecap="round" />
+        <path d="M25 10 c 4 -1 6 1 6 4 c -3 1 -6 -1 -6 -4 Z" fill="#7ED957" stroke={INK_ICON} strokeWidth="1.8" strokeLinejoin="round" />
+      </g>
+    ),
+    mandarin: (
+      <g>
+        {sh("M23 14 a 11 10 0 1 0 0.1 0 Z")}
+        <ellipse cx="23" cy="25" rx="11" ry="10" fill="#FF9F3C" {...S} />
+        <circle cx="18" cy="22" r="0.9" fill="#E07B1C" /><circle cx="26" cy="21" r="0.9" fill="#E07B1C" /><circle cx="22" cy="28" r="0.9" fill="#E07B1C" /><circle cx="28" cy="27" r="0.9" fill="#E07B1C" />
+        <path d="M23 15 c 0 -2 1 -3 2 -4" fill="none" stroke={INK_ICON} strokeWidth="2" strokeLinecap="round" />
+        <path d="M24 11 c 3 -1 5 0.5 5 3 c -2.5 1 -5 -0.5 -5 -3 Z" fill="#7ED957" stroke={INK_ICON} strokeWidth="1.6" strokeLinejoin="round" />
+      </g>
+    ),
+    peach: (
+      <g>
+        {sh("M23 15 c 7 -2 11 3 10 9 c -1 7 -5 11 -10 11 c -5 0 -9 -4 -10 -11 c -1 -6 3 -11 10 -9 Z")}
+        <path d="M23 15 c 7 -2 11 3 10 9 c -1 7 -5 11 -10 11 c -5 0 -9 -4 -10 -11 c -1 -6 3 -11 10 -9 Z" fill="#FFB085" {...S} />
+        <path d="M23 16 c 2 5 2 12 0 18" fill="none" stroke="#E8865C" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M23 14 c 0 -2 1 -3.5 2.5 -4.5" fill="none" stroke={INK_ICON} strokeWidth="2" strokeLinecap="round" />
+        <path d="M25 10 c 3 -1 5 0.5 5 3 c -2.5 1 -5 -0.5 -5 -3 Z" fill="#7ED957" stroke={INK_ICON} strokeWidth="1.6" strokeLinejoin="round" />
+      </g>
+    ),
+    popchips: (
+      <g>
+        {sh("M23 13 a 11 11 0 1 0 0.1 0 Z")}
+        <circle cx="23" cy="24" r="11" fill="#F2D8A0" {...S} />
+        <path d="M15 21 a 9 9 0 0 1 5 -5" fill="none" stroke="#FBEBC8" strokeWidth="2.6" strokeLinecap="round" />
+        <circle cx="20" cy="26" r="1" fill="#D9B878" /><circle cx="26" cy="22" r="1" fill="#D9B878" /><circle cx="24" cy="29" r="1" fill="#D9B878" /><circle cx="28" cy="27" r="0.9" fill="#D9B878" />
+      </g>
+    ),
+    tortillachips: (
+      <g>
+        {sh("M12 15 h 16 L 20 32 Z")}
+        <path d="M12 15 h 16 L 20 32 Z" fill="#FFC93C" {...S} />
+        <path d="M20 18 h 15 L 27.5 35 Z" fill="#F0A800" {...S} />
+        <circle cx="19" cy="20" r="0.9" fill="#C77B1C" /><circle cx="27" cy="24" r="0.9" fill="#C77B1C" /><circle cx="25" cy="29" r="0.9" fill="#C77B1C" />
+      </g>
+    ),
+    potatochips: (
+      <g>
+        {sh("M13 22 C 13 15 33 15 33 22 C 33 30 27 35 23 35 C 19 35 13 30 13 22 Z")}
+        <path d="M13 22 C 13 15 33 15 33 22 C 33 30 27 35 23 35 C 19 35 13 30 13 22 Z" fill="#FFD98C" {...S} />
+        <path d="M15.5 21 q 3.75 3 7.5 0 t 7.5 0" fill="none" stroke="#E0A83C" strokeWidth="2" strokeLinecap="round" />
+        <path d="M17 27 q 3 2.4 6 0 t 6 0" fill="none" stroke="#E0A83C" strokeWidth="1.8" strokeLinecap="round" />
+      </g>
+    ),
+    yasso: (
+      <g>
+        {sh("M16 9 h 14 a 3 3 0 0 1 3 3 v 16 a 3 3 0 0 1 -3 3 h -14 a 3 3 0 0 1 -3 -3 v -16 a 3 3 0 0 1 3 -3 Z")}
+        <rect x="13" y="9" width="20" height="22" rx="3" fill="#5C3A21" {...S} />
+        <path d="M13 20 c 3 2 6 -2 10 0 s 7 2 10 0 V 28 a 3 3 0 0 1 -3 3 h -14 a 3 3 0 0 1 -3 -3 Z" fill="#FFF7E6" stroke={INK_ICON} strokeWidth="1.8" />
+        <rect x="20.5" y="31" width="5" height="7" rx="2" fill="#F2D8A0" {...S} strokeWidth="2" />
+      </g>
+    ),
+    icecream: (
+      <g>
+        {sh("M14 24 a 9 9 0 0 1 18 0 Z")}
+        <path d="M14 24 a 9 9 0 0 1 18 0 Z" fill="#FBEBC8" {...S} />
+        <circle cx="18.5" cy="18.5" r="1" fill="#E0A83C" /><circle cx="24" cy="16.5" r="1" fill="#8B5A3C" /><circle cx="28" cy="19.5" r="1" fill="#E0A83C" />
+        <path d="M12 24 h 22 l -3 4 h -16 Z" fill="#FF5FA2" {...S} strokeWidth="2.2" />
+        <path d="M17 28 l 2.5 8 h 7 L 29 28" fill="#FF8FBE" stroke={INK_ICON} strokeWidth="2.2" strokeLinejoin="round" />
+      </g>
+    ),
+    nerds: (
+      <g>
+        {sh("M16 16 a 5 5 0 0 1 7 -2 a 5 5 0 0 1 8 3 a 5 5 0 0 1 1 8 a 5.5 5.5 0 0 1 -8 5 a 5.5 5.5 0 0 1 -9 -4 a 5 5 0 0 1 1 -10 Z")}
+        <path d="M16 16 a 5 5 0 0 1 7 -2 a 5 5 0 0 1 8 3 a 5 5 0 0 1 1 8 a 5.5 5.5 0 0 1 -8 5 a 5.5 5.5 0 0 1 -9 -4 a 5 5 0 0 1 1 -10 Z" fill="#9B6DF2" {...S} />
+        <circle cx="20" cy="19" r="2.6" fill="#FF5FA2" stroke={INK_ICON} strokeWidth="1.5" />
+        <circle cx="27" cy="21" r="2.4" fill="#FFC93C" stroke={INK_ICON} strokeWidth="1.5" />
+        <circle cx="22" cy="26" r="2.4" fill="#7ED957" stroke={INK_ICON} strokeWidth="1.5" />
+        <circle cx="28" cy="27" r="2" fill="#FF5FA2" stroke={INK_ICON} strokeWidth="1.4" />
       </g>
     ),
   };
@@ -1699,6 +1924,7 @@ function Streakhouse() {
   const [syncNote, setSyncNote] = useState("");
   const [syncShowCode, setSyncShowCode] = useState(false);
   const [chatMsgs, setChatMsgs] = useState([]);
+  const [openCat, setOpenCat] = useState(null);
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const chatEndRef = useRef(null);
@@ -3031,20 +3257,34 @@ function Streakhouse() {
 
           <div className="card">
             <h2>Staples</h2>
-            <div className="sub">The frequent fliers — one tap logs a serving.</div>
-            <div className="pours">
-              {STAPLES.map((d) => {
-                const n = day.entries.filter((en) => en.name === d.name).length;
-                return (
-                  <button key={d.id} className="pourbtn" disabled={day.closed} onClick={() => addEntry(d.name, d.cal, d.p, d.f)} aria-label={`Log ${d.name}, ${d.cal} calories`}>
-                    {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
-                    <StapleIcon kind={d.id} />
-                    <span className="pl">{d.label}</span>
-                    <span className="pc num">{d.cal}</span>
+            <div className="sub">The frequent fliers — one tap logs a serving. Tap a shelf to open it.</div>
+            {STAPLE_CATS.map((cat) => {
+              const catCount = day.entries.filter((en) => cat.items.some((d) => d.name === en.name)).length;
+              const open = openCat === cat.id;
+              return (
+                <div key={cat.id}>
+                  <button className={`cathdr ${open ? "on" : ""}`} aria-expanded={open} onClick={() => setOpenCat(open ? null : cat.id)}>
+                    <span>{cat.label}</span>
+                    <span className="num" style={{ fontSize: 11 }}>{catCount > 0 ? `${catCount} today \u00b7 ` : ""}{cat.items.length} {open ? "\u25b4" : "\u25be"}</span>
                   </button>
-                );
-              })}
-            </div>
+                  {open && (
+                    <div className="pours" style={{ marginTop: 10, marginBottom: 6 }}>
+                      {cat.items.map((d) => {
+                        const n = day.entries.filter((en) => en.name === d.name).length;
+                        return (
+                          <button key={d.id} className="pourbtn" disabled={day.closed} onClick={() => addEntry(d.name, d.cal, d.p, d.f)} aria-label={`Log ${d.name}, ${d.cal} calories`}>
+                            {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
+                            <StapleIcon kind={d.id} />
+                            <span className="pl">{d.label}</span>
+                            <span className="pc num">{d.cal}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div className="card">
@@ -3557,6 +3797,9 @@ function Streakhouse() {
         .bubble.asst { align-self:flex-start; background:#FFFDF8; border-bottom-left-radius:5px; box-shadow:2px 2px 0 #1E1A1C; }
         .bubble.typing { color:#5C5254; letter-spacing:2px; }
         .chatact { align-self:flex-start; font-size:11px; font-weight:800; background:#7ED957; color:#1E1A1C; border:2px solid #1E1A1C; border-radius:999px; padding:3px 11px; box-shadow:2px 2px 0 #1E1A1C; }
+        button.cathdr { width:100%; display:flex; justify-content:space-between; align-items:center; background:#FFFDF8; border:2.5px solid #1E1A1C; border-radius:12px; padding:8px 12px; margin-top:10px; font-weight:800; font-size:12px; letter-spacing:.6px; text-transform:uppercase; color:#1E1A1C; cursor:pointer; box-shadow:2px 2px 0 #1E1A1C; font-family:inherit; }
+        button.cathdr.on { background:#FFC93C; }
+        button.cathdr:active { transform:translate(2px,2px); box-shadow:0 0 0 #1E1A1C; }
         .pours { display:grid; grid-template-columns:repeat(3,1fr); gap:12px 10px; margin-top:12px; }
         button.pourbtn { position:relative; background:#fff; border:2.5px solid #1E1A1C; border-radius:14px; box-shadow:3px 3px 0 #1E1A1C; padding:7px 2px 5px; display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; font-family:inherit; }
         button.pourbtn:hover { transform:translate(-1px,-1px); box-shadow:4px 4px 0 #1E1A1C; }
