@@ -1173,9 +1173,10 @@ function FiberIcon({ size = 14 }) {
 
 /* ---------- Pours: one-tap drink logging, each a sticker illustration ---------- */
 const POURS = [
-  { id: "beer", name: "beer", label: "Beer", cal: 145 },
+  { id: "espmartini", name: "espresso martini", label: "Esp. martini", cal: 240 },
   { id: "lightbeer", name: "light beer", label: "Light beer", cal: 100 },
   { id: "wine", name: "wine", label: "Wine", cal: 125 },
+  { id: "champagne", name: "champagne", label: "Champagne", cal: 95 },
   { id: "marg", name: "margarita", label: "Marg", cal: 250 },
   { id: "martini", name: "martini", label: "Martini", cal: 200 },
   { id: "oldfash", name: "old fashioned", label: "Old fash", cal: 200 },
@@ -1186,15 +1187,27 @@ const POURS = [
 function DrinkIcon({ kind, size = 38 }) {
   const S = { stroke: INK_ICON, strokeWidth: 2.4, strokeLinejoin: "round" };
   const art = {
-    beer: (
+    espmartini: (
       <g>
-        <rect x="12" y="16" width="19" height="24" rx="4" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
-        <path d="M31 21 h 4 a 3.5 3.5 0 0 1 3.5 3.5 v 5 a 3.5 3.5 0 0 1 -3.5 3.5 h -4" fill="none" {...S} />
-        <rect x="12" y="16" width="19" height="24" rx="4" fill="#F0A800" {...S} />
-        <path d="M16 22 v 13" stroke="#FFC93C" strokeWidth="3.4" strokeLinecap="round" />
-        <circle cx="15" cy="14" r="4.4" fill="#FFF" {...S} />
-        <circle cx="22" cy="12.4" r="5" fill="#FFF" {...S} />
-        <circle cx="28.6" cy="14.4" r="4.2" fill="#FFF" {...S} />
+        <path d="M10 9 h 24 L 22 22 Z" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <path d="M10 9 h 24 L 22 22 Z" fill="#6E4A28" {...S} />
+        <path d="M11.8 10.7 h 20.4 l -2.3 2.6 H 14.1 Z" fill="#F2D8A0" stroke={INK_ICON} strokeWidth="1.4" />
+        <ellipse cx="18.5" cy="12" rx="2" ry="1.4" fill="#8B5A3C" stroke={INK_ICON} strokeWidth="1" transform="rotate(-16 18.5 12)" />
+        <ellipse cx="22.6" cy="11.6" rx="2" ry="1.4" fill="#8B5A3C" stroke={INK_ICON} strokeWidth="1" transform="rotate(10 22.6 11.6)" />
+        <ellipse cx="26.6" cy="12.1" rx="2" ry="1.4" fill="#8B5A3C" stroke={INK_ICON} strokeWidth="1" transform="rotate(-8 26.6 12.1)" />
+        <path d="M22 22 v 11" {...S} />
+        <path d="M15 37 h 14" fill="none" {...S} strokeLinecap="round" />
+      </g>
+    ),
+    champagne: (
+      <g>
+        <path d="M18.5 7 h 7 c 0.6 9 0 14.5 -3.5 15.5 c -3.5 -1 -4.1 -6.5 -3.5 -15.5 Z" transform="translate(2 2)" fill={INK_ICON} opacity=".9" />
+        <path d="M18.5 7 h 7 c 0.6 9 0 14.5 -3.5 15.5 c -3.5 -1 -4.1 -6.5 -3.5 -15.5 Z" fill="#FFF" {...S} />
+        <path d="M18.6 11 c 0 6.5 0.9 10.3 3.4 11.2 c 2.5 -0.9 3.4 -4.7 3.4 -11.2 Z" fill="#FFDf8C" stroke={INK_ICON} strokeWidth="1.4" />
+        <circle cx="20.8" cy="14.5" r="1" fill="#FFF" /><circle cx="23.4" cy="17" r="1.2" fill="#FFF" /><circle cx="21.6" cy="19.5" r="0.9" fill="#FFF" />
+        <path d="M22 22.5 v 10.5" {...S} />
+        <path d="M16 37 h 12" fill="none" {...S} strokeLinecap="round" />
+        <path d="M30 8 l 1.6 3.6 3.6 1.6 -3.6 1.6 -1.6 3.6 -1.6 -3.6 -3.6 -1.6 3.6 -1.6 Z" fill="#FFC93C" stroke={INK_ICON} strokeWidth="1.4" strokeLinejoin="round" />
       </g>
     ),
     lightbeer: (
@@ -1857,7 +1870,7 @@ function Streakhouse() {
     /* humor bank data-reactive triggers get first crack at the quip */
     const allEntries = [...day.entries, ...es];
     const addedNames = es.map((e) => e.name.toLowerCase()).join(" ");
-    const DRINK_RE = /beer|wine|margarita|cocktail|seltzer|tequila|vodka|whiskey|modelo|mimosa|sangria|spritz|claw|ros[eé]|prosecco|champagne|shot/;
+    const DRINK_RE = /beer|wine|margarita|cocktail|martini|old fashioned|seltzer|tequila|vodka|whiskey|modelo|mimosa|sangria|spritz|claw|ros[eé]|prosecco|champagne|shot/;
     const triggers = [];
     if (/chips|queso|nacho|fried|fries/.test(addedNames)) triggers.push("chipsLogged");
     if (DRINK_RE.test(addedNames) && allEntries.filter((e) => DRINK_RE.test(e.name.toLowerCase())).length >= 3) triggers.push("threePlusDrinks");
@@ -3041,7 +3054,7 @@ function Streakhouse() {
         .quip { background:#FFD6E8; border:2px solid #7C48D8; border-radius:14px; padding:10px 14px; margin-top:12px; transform:rotate(-.4deg); }
         .quip .ql { font-size:9px; font-weight:800; letter-spacing:1.5px; text-transform:uppercase; color:#7C48D8; }
         .quip .qt { font-size:13px; font-weight:800; margin-top:2px; line-height:1.35; }
-        .pours { display:grid; grid-template-columns:repeat(4,1fr); gap:12px 10px; margin-top:12px; }
+        .pours { display:grid; grid-template-columns:repeat(3,1fr); gap:12px 10px; margin-top:12px; }
         button.pourbtn { position:relative; background:#fff; border:2.5px solid #1E1A1C; border-radius:14px; box-shadow:3px 3px 0 #1E1A1C; padding:7px 2px 5px; display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; font-family:inherit; }
         button.pourbtn:hover { transform:translate(-1px,-1px); box-shadow:4px 4px 0 #1E1A1C; }
         button.pourbtn:active { transform:translate(3px,3px); box-shadow:0 0 0 #1E1A1C; }
