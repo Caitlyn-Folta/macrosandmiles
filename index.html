@@ -1535,6 +1535,7 @@ function Streakhouse() {
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const chatEndRef = useRef(null);
+  const chatCardRef = useRef(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoNote, setPhotoNote] = useState("");
   const fileRef = useRef(null);
@@ -1991,11 +1992,17 @@ function Streakhouse() {
           note: notes.join(" · "),
         };
       });
+      if (items.every((x) => x.cal === "") && settings.aiUrl) {
+        setEstimating(false);
+        chatHandoff(desc); /* nothing matched anywhere -> straight to the chat */
+        return;
+      }
       setEstimateItems(items);
       setEstimateNote(items.every((x) => x.cal === "")
         ? "No matches. Fill in the calories on each line, then add — it's cached for next time."
         : "Check each line and tweak anything that looks off, then add.");
     } catch (e) {
+      if (settings.aiUrl) { setEstimating(false); chatHandoff(desc); return; }
       setEstimateNote(`Lookup failed (${e.message}). Enter values manually.`);
     }
     setEstimating(false);
@@ -2243,8 +2250,8 @@ function Streakhouse() {
     return work();
   };
 
-  const sendChat = async () => {
-    const text = chatInput.trim();
+  const sendChat = async (textArg) => {
+    const text = (typeof textArg === "string" ? textArg : chatInput).trim();
     if (!text || chatBusy || !settings.aiUrl) return;
     setChatBusy(true); setChatInput("");
     let msgs = [...chatMsgs, { role: "user", content: text }];
@@ -2295,6 +2302,14 @@ function Streakhouse() {
   const clearChat = async () => {
     setChatMsgs([]); await sset(K.chat, []);
     flash("Chat cleared. The log itself is untouched.");
+  };
+
+  /* lookup came up empty -> hand the original text to the chat below */
+  const chatHandoff = (text) => {
+    setEstimateItems(null); setEstimateNote(""); setDesc("");
+    flash("Couldn't match that — asking the chat ↓");
+    if (chatCardRef.current) chatCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    sendChat(text);
   };
 
   /* ---------- week-in-review handlers ---------- */
@@ -2464,6 +2479,64 @@ function Streakhouse() {
 
   /* Tab contents as reusable fragments: phones show one at a time behind
      tabs; wide screens lay all of them out as a dashboard. */
+  const chatContent = (
+    <div className="card" ref={chatCardRef}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+        <h2>Chat</h2>
+        {chatMsgs.length > 0 && <button className="tinybtn" onClick={clearChat} aria-label="Clear chat history">clear</button>}
+      </div>
+      {!settings.aiUrl ? (
+        <div className="sub">
+          Chat needs your Cloudflare Worker — set it up once in the plan tab (✨ AI lookup → Save & test),
+          then log food by talking it through here. It asks before it guesses.
+        </div>
+      ) : (
+        <React.Fragment>
+          <div className="chatlog" aria-live="polite">
+            {chatMsgs.length === 0 && (
+              <div className="sub">
+                Tell it what you ate and it logs it — asking first when the portion's unclear.
+                Try "2 eggs and buttered toast", "same dinner as last night", "delete the yogurt",
+                or "how much do I have left?"
+              </div>
+            )}
+            {chatMsgs.map((m, i) => {
+              if (m.role === "user") {
+                if (typeof m.content !== "string") return null; /* tool results */
+                return <div key={i} className="bubble user">{m.content}</div>;
+              }
+              const txt = (m.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+              const acts = (m.content || []).filter((b) => b.type === "tool_use");
+              return (
+                <React.Fragment key={i}>
+                  {txt && <div className="bubble asst">{txt}</div>}
+                  {acts.map((a, j) => (
+                    <div key={j} className="chatact num">
+                      {a.name === "log_food" ? `✓ logged ${a.input.name} · ${a.input.cal} cal`
+                        : a.name === "delete_food_entry" ? `✕ removed "${a.input.match}"`
+                        : a.name === "edit_food_entry" ? `✎ updated "${a.input.match}"`
+                        : a.name === "log_weight" ? `✓ weigh-in ${a.input.weight}`
+                        : a.name}
+                    </div>
+                  ))}
+                </React.Fragment>
+              );
+            })}
+            {chatBusy && <div className="bubble asst typing">…</div>}
+            <div ref={chatEndRef} />
+          </div>
+          <div className="row" style={{ marginTop: 8, alignItems: "stretch" }}>
+            <textarea rows={2} className="foodbox" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+              placeholder="I had…" aria-label="Chat message" />
+            <button className="pri" style={{ minWidth: 68 }} onClick={sendChat} disabled={chatBusy || !chatInput.trim()}>Send</button>
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+
+
   const todayContent = (
     <React.Fragment>
           <div className="peptalk">
@@ -2588,6 +2661,11 @@ function Streakhouse() {
                   </button>
                   <button onClick={() => { setEstimateItems(null); setEstimateNote(""); }}>Cancel</button>
                 </div>
+                {settings.aiUrl && estimateItems.some((x) => x.cal === "") && (
+                  <div className="row">
+                    <button className="ember" style={{ width: "100%" }} onClick={() => chatHandoff(desc)}>💬 Ask the chat below instead</button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2699,6 +2777,8 @@ function Streakhouse() {
             </div>
           </div>
 
+          {chatContent}
+
           <div className="card">
             <h2>Pours</h2>
             <div className="sub">One tap logs the drink straight to today's count (and the weekend pool). The snack judge sees everything.</div>
@@ -2808,63 +2888,6 @@ function Streakhouse() {
             )}
           </div>
         </React.Fragment>
-  );
-
-  const chatContent = (
-    <div className="card">
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <h2>Chat</h2>
-        {chatMsgs.length > 0 && <button className="tinybtn" onClick={clearChat} aria-label="Clear chat history">clear</button>}
-      </div>
-      {!settings.aiUrl ? (
-        <div className="sub">
-          Chat needs your Cloudflare Worker — set it up once in the plan tab (✨ AI lookup → Save & test),
-          then log food by talking it through here. It asks before it guesses.
-        </div>
-      ) : (
-        <React.Fragment>
-          <div className="chatlog" aria-live="polite">
-            {chatMsgs.length === 0 && (
-              <div className="sub">
-                Tell it what you ate and it logs it — asking first when the portion's unclear.
-                Try "2 eggs and buttered toast", "same dinner as last night", "delete the yogurt",
-                or "how much do I have left?"
-              </div>
-            )}
-            {chatMsgs.map((m, i) => {
-              if (m.role === "user") {
-                if (typeof m.content !== "string") return null; /* tool results */
-                return <div key={i} className="bubble user">{m.content}</div>;
-              }
-              const txt = (m.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
-              const acts = (m.content || []).filter((b) => b.type === "tool_use");
-              return (
-                <React.Fragment key={i}>
-                  {txt && <div className="bubble asst">{txt}</div>}
-                  {acts.map((a, j) => (
-                    <div key={j} className="chatact num">
-                      {a.name === "log_food" ? `✓ logged ${a.input.name} · ${a.input.cal} cal`
-                        : a.name === "delete_food_entry" ? `✕ removed "${a.input.match}"`
-                        : a.name === "edit_food_entry" ? `✎ updated "${a.input.match}"`
-                        : a.name === "log_weight" ? `✓ weigh-in ${a.input.weight}`
-                        : a.name}
-                    </div>
-                  ))}
-                </React.Fragment>
-              );
-            })}
-            {chatBusy && <div className="bubble asst typing">…</div>}
-            <div ref={chatEndRef} />
-          </div>
-          <div className="row" style={{ marginTop: 8, alignItems: "stretch" }}>
-            <textarea rows={2} className="foodbox" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
-              placeholder="I had…" aria-label="Chat message" />
-            <button className="pri" style={{ minWidth: 68 }} onClick={sendChat} disabled={chatBusy || !chatInput.trim()}>Send</button>
-          </div>
-        </React.Fragment>
-      )}
-    </div>
   );
 
   const trendsContent = (
@@ -3347,7 +3370,7 @@ function Streakhouse() {
 
       {!wide && (
         <div className="tabs" role="tablist">
-          {["today", "chat", "trends", "photos", "plan"].map((t) => (
+          {["today", "trends", "photos", "plan"].map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={`tabbtn ${tab === t ? "on" : ""}`} onClick={() => { setTab(t); if (t === "plan") prefillGoalDrafts(); }}>{t}</button>
           ))}
         </div>
@@ -3356,13 +3379,12 @@ function Streakhouse() {
       {wide ? (
         <div className="dash">
           <div className="dashcol">{todayContent}</div>
-          <div className="dashcol">{chatContent}{trendsContent}</div>
+          <div className="dashcol">{trendsContent}</div>
           <div className="dashcol">{planContent}{photosContent}</div>
         </div>
       ) : (
         <React.Fragment>
           {tab === "today" && todayContent}
-          {tab === "chat" && chatContent}
           {tab === "trends" && trendsContent}
           {tab === "photos" && photosContent}
           {tab === "plan" && planContent}
