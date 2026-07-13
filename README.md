@@ -1,7 +1,7 @@
 Macros & Miles
 Personal calorie, macro, and step tracker. Runs as a PWA on GitHub Pages — no build step, no server, no dependencies to install. All data lives in the browser storage on the phone (optionally synced between your devices through your own Cloudflare account — see Device sync below); nothing is ever stored in this repo.
 
-Live app: https://YOUR-USERNAME.github.io/macros-and-miles/ (install via Safari → Share → Add to Home Screen). On phones it's a tabbed single column; on screens 1000px+ it becomes a three-column dashboard (today feed | trends | plan + photos) with no tabs — same data, same logic, layout switches live on resize.
+Live app: https://YOUR-USERNAME.github.io/macros-and-miles/ (install via Safari → Share → Add to Home Screen). On phones it's a tabbed single column (eats | vitals | trends | photos | plan); on screens 1000px+ it becomes a three-column dashboard (eats | vitals + trends | plan + photos) with no tabs — same data, same logic, layout switches live on resize.
 Files
 File
 What it is
@@ -22,13 +22,13 @@ App icons
 
 Design system. The visual language follows the Macros & Miles design system (modern 90s bubble-sticker: candy brights on warm cream, ink outlines, hard offset sticker shadows, Titan One display / Baloo 2 body / Space Mono stats, ink text on all candy colors, halftone dot texture). Tokens are applied directly as hex values in index.html's style block. Protein, fiber, and the Pours drinks all use hand-drawn SVG sticker icons (ProteinIcon/FiberIcon/DrinkIcon in index.html) rather than emoji; the remaining emoji (snack judge, quests) are load-bearing content.
 
-Staples. A one-tap food logger on the today tab — thirteen sticker-icon buttons for the frequent fliers (egg, Fairlife lowfat milk, lowfat cottage cheese, lowfat cheese, ¼ avocado, lowfat greek yogurt, raspberries, strawberries, blueberries, cherry tomatoes, mini cucumbers, dark chocolate square, Skinny Pop popcorn), each logging one serving with calories/protein/fiber. Badges count today's taps. The same foods live in FOOD_DB so typing them works too.
+Staples. A one-tap food logger on the eats tab — thirteen sticker-icon buttons for the frequent fliers (egg, Fairlife lowfat milk, lowfat cottage cheese, lowfat cheese, ¼ avocado, lowfat greek yogurt, raspberries, strawberries, blueberries, cherry tomatoes, mini cucumbers, dark chocolate square, Skinny Pop popcorn), each logging one serving with calories/protein/fiber. Badges count today's taps. The same foods live in FOOD_DB so typing them works too.
 
 🧾 Receipt scan. The "Scan a receipt" button in the tracker card photographs a grocery receipt: OCR runs on-device (tesseract.js), the raw text goes to the Worker's /receipt endpoint, and Claude extracts the food items — expanding receipt abbreviations ("KASHI GOLEAN" → kashi go lean cereal) — with per-serving nutrition estimates. The app shows an editable checklist; checked items save to the custom foods database (mm:customfoods:v1), so everything from the grocery run resolves instantly when typed or dictated later. Requires the AI Worker; items save to the database rather than logging to today.
 
-Period tracker now lives on the today view, directly above the Close the Day card (it left the plan tab so marking a day is one tap from the main screen).
+Vitals tab. Steps (top), a Weigh-in card (last weight + entry; the chart stays in trends), and the period tracker live on their own tab, keeping the eats front page food-only and the phone scroll short.
 
-Pours. A one-tap drink logger on the today tab: eight sticker-style drink icons (beer, light beer, wine, margarita, martini, old fashioned, seltzer, shot) with per-serving calories from the built-in table. Tapping logs the drink as a normal entry (editable/deletable like any other, counts toward the day and the weekend pool), and a badge on each icon shows today's count. The 3+-drinks data-reactive humor triggers pick these up like typed entries.
+Pours. A one-tap drink logger on the eats tab: eight sticker-style drink icons (beer, light beer, wine, margarita, martini, old fashioned, seltzer, shot) with per-serving calories from the built-in table. Tapping logs the drink as a normal entry (editable/deletable like any other, counts toward the day and the weekend pool), and a badge on each icon shows today's count. The 3+-drinks data-reactive humor triggers pick these up like typed entries.
 
 Rules to remember
 After editing index.html, food-db.js, or humor-bank.js, bump the cache version in sw.js. Change mm-v1 to mm-v2 (then v3, and so on) and commit both. If you skip this, phones keep serving the old cached version. The app auto-reloads once when a new service worker takes control, so updates land on the same open — but only if the cache version was bumped.
