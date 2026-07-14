@@ -656,11 +656,15 @@ function mergeDayRaw(aRaw, bRaw) {
     entries,
     del,
     /* steps: the newest paste replaces (sm = steps-modified stamp). A bad or
-       stale count must be correctable, so max() only breaks legacy ties. */
+       stale count must be correctable, so max() only breaks legacy ties.
+       so (origin: paste/url/manual/close) travels with the winning count. */
     steps: (a.sm || 0) === (b.sm || 0)
       ? Math.max(a.steps || 0, b.steps || 0)
       : ((a.sm || 0) > (b.sm || 0) ? a.steps || 0 : b.steps || 0),
     sm: Math.max(a.sm || 0, b.sm || 0),
+    so: ((a.sm || 0) === (b.sm || 0)
+      ? ((a.steps || 0) >= (b.steps || 0) ? a.so : b.so)
+      : ((a.sm || 0) > (b.sm || 0) ? a.so : b.so)) || a.so || b.so || null,
     xp: Math.max(a.xp || 0, b.xp || 0),
     closed: !!(a.closed || b.closed),
     mq,
@@ -2379,8 +2383,8 @@ function Streakhouse() {
       const q = new URLSearchParams(window.location.search);
       const n = q.has("steps") ? parseStepsText(q.get("steps")) : null;
       if (n != null && n > 0 && n < 200000) {
-        saveSteps(String(n));
-        flash(`👟 ${n.toLocaleString()} steps synced from your Shortcut`);
+        saveSteps(String(n), "url");
+        flash(`👟 ${n.toLocaleString()} steps arrived via the Shortcut URL`);
       }
       if (q.has("steps")) window.history.replaceState({}, "", window.location.pathname);
     } catch {}
@@ -2831,11 +2835,13 @@ function Streakhouse() {
     await commitDay(Object.assign({}, day, { entries: day.entries.map((e) => (e.id === editEntry.id ? Object.assign({}, e, fields) : e)) }));
     setEditEntry(null);
   };
-  const saveSteps = async (val) => {
+  /* so = steps origin, displayed under the count so a wrong number can be
+     traced to the route that delivered it (paste vs ?steps= URL vs typed) */
+  const saveSteps = async (val, origin) => {
     const n = parseInt(val != null ? val : stepInput, 10);
     /* sm: steps-modified stamp so the sync merge treats this as a replace */
     if (!isNaN(n) && n >= 0) {
-      await commitDay(Object.assign({}, day, { steps: n, sm: Date.now() }));
+      await commitDay(Object.assign({}, day, { steps: n, sm: Date.now(), so: origin || "manual" }));
       setStepInput("");
       /* steps are a paste-and-close action — push right away, don't gamble
          the 4s debounce against iOS suspending the app */
@@ -2851,7 +2857,7 @@ function Streakhouse() {
       const txt = await navigator.clipboard.readText();
       const n = parseStepsText(txt);
       if (n == null) { flash("No step count found on the clipboard — run the Shortcut first"); return; }
-      await saveSteps(String(n));
+      await saveSteps(String(n), "paste");
       flash(`👟 ${n.toLocaleString()} steps imported from Health`);
     } catch {
       flash("Couldn't read the clipboard — long-press the box and paste instead");
@@ -3351,7 +3357,7 @@ function Streakhouse() {
   const finishClose = async () => {
     let d = day;
     const n = parseInt(closeFlow.steps, 10);
-    if (!isNaN(n) && n >= 0 && n !== day.steps) { d = Object.assign({}, d, { steps: n, sm: Date.now() }); }
+    if (!isNaN(n) && n >= 0 && n !== day.steps) { d = Object.assign({}, d, { steps: n, sm: Date.now(), so: "close" }); }
     let wLogged = weights.some((w) => w.d === today);
     if (closeFlow.weight) { const ok = await saveWeight(closeFlow.weight); if (ok) wLogged = true; }
 
@@ -4004,6 +4010,12 @@ function Streakhouse() {
             <h2>👟 Touch Grass</h2>
             <div className="bignum num">{day.steps.toLocaleString()}</div>
             <div className="sub num">of {settings.stepGoal.toLocaleString()} · {stepPct}%</div>
+            {day.sm ? (
+              <div className="sub" style={{ marginTop: 2 }}>
+                last set {new Date(day.sm).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })} ·{" "}
+                {{ paste: "Health Shortcut paste", url: "Shortcut URL (?steps=)", close: "day close", manual: "typed here" }[day.so] || "typed here"}
+              </div>
+            ) : null}
             <div className="bar"><div style={{ width: `${stepPct}%`, background: stepPct >= 100 ? "#52B52E" : "#7ED957" }} /></div>
             <div className="row">
               <input inputMode="numeric" value={stepInput} onChange={(e) => setStepInput(e.target.value)} placeholder="Count from your watch" aria-label="Step count" onKeyDown={(e) => e.key === "Enter" && saveSteps()} />
@@ -4034,6 +4046,12 @@ function Streakhouse() {
                   samples and the Sum counts the overlap twice. Fix it in the Shortcut: in <b>Find Health Samples</b>, add a <b>Source / Device</b> filter
                   for just your Watch (it counts wrist steps all day, including phone-in-hand walks). The Health app's own number is the referee —
                   the import should match it.
+                </div>
+                <div className="qdesc" style={{ marginTop: 8 }}>
+                  <b>Fixed the Shortcut but the app still shows the big number?</b> Check the optional <b>Open URLs</b> step: after editing, it can
+                  still reference the OLD unfiltered sum variable, and it sends that number straight into the app every time the Shortcut runs —
+                  even while the clipboard carries the right one. Re-pick the variable there (or delete the Open URLs step and just use paste).
+                  The "last set" line under the count shows which route delivered the current number: paste, Shortcut URL, or typed.
                 </div>
               </div>
             )}
