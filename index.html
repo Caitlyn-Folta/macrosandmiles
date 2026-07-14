@@ -584,6 +584,19 @@ function syncTouch(key) {
   syncTimer = setTimeout(() => { syncNow("change"); }, 4000);
 }
 
+/* Push NOW instead of waiting out the 4s debounce. iOS freezes the page the
+   moment the PWA is backgrounded, so a pending debounce timer silently dies —
+   which is exactly what happens after paste-and-close actions like a steps
+   import. keepalive lets the browser finish the request after suspension. */
+let syncUrgent = false;
+function syncFlush(reason) {
+  const cfg = syncCfg();
+  if (!cfg || !cfg.dirty || syncBusy) return;
+  clearTimeout(syncTimer);
+  syncUrgent = true;
+  Promise.resolve(syncNow(reason || "flush")).finally(() => { syncUrgent = false; });
+}
+
 const syncReadRaw = async (k) =>
   k === "mm:customfoods" ? (localStorage.getItem(CUSTOM_KEY) || "[]") : ((await window.storage.get(k)) || {}).value;
 const syncWriteRaw = async (k, raw) => {
@@ -743,7 +756,7 @@ async function syncNow(reason) {
       let remote;
       if (authoritative) { remote = authoritative; authoritative = null; }
       else {
-        const res = await fetch(cfg.url + "/sync", { headers: { "x-sync-code": cfg.code } });
+        const res = await fetch(cfg.url + "/sync", { headers: { "x-sync-code": cfg.code }, keepalive: syncUrgent });
         if (!res.ok) throw new Error(`sync HTTP ${res.status}`);
         remote = await res.json();
       }
@@ -758,10 +771,13 @@ async function syncNow(reason) {
          point re-sets it and gets picked up by the follow-up push below */
       syncCfgMerge({ dirty: false });
       const doc = await syncBuildDoc((syncCfg() || fresh).kts);
+      const putBody = JSON.stringify({ baseRev: remote.rev, data: doc });
       const put = await fetch(cfg.url + "/sync", {
         method: "PUT",
         headers: { "Content-Type": "application/json", "x-sync-code": cfg.code },
-        body: JSON.stringify({ baseRev: remote.rev, data: doc }),
+        body: putBody,
+        /* keepalive caps bodies at ~64KB — send it plain when the doc is bigger */
+        keepalive: syncUrgent && putBody.length < 60000,
       });
       if (put.status === 409) {
         syncCfgMerge({ dirty: true });
@@ -2342,10 +2358,17 @@ function Streakhouse() {
     syncOnChange = () => { flash("Synced updates from your other device — refreshing"); setTimeout(() => window.location.reload(), 900); };
     const onVis = () => {
       const c = syncCfg();
-      if (document.visibilityState === "visible" && c && Date.now() - (c.last || 0) > 60000) syncNow("focus");
+      if (!c) return;
+      /* going to background: fire any pending push NOW — the debounce timer
+         dies when iOS suspends the page (the classic paste-steps-and-close) */
+      if (document.visibilityState === "hidden") { syncFlush("hide"); return; }
+      /* back to foreground: push unsent changes immediately, pull if stale */
+      if (document.visibilityState === "visible" && (c.dirty || Date.now() - (c.last || 0) > 60000)) syncNow("focus");
     };
+    const onHide = () => syncFlush("pagehide");
     document.addEventListener("visibilitychange", onVis);
-    return () => { syncOnStatus = null; syncOnChange = null; document.removeEventListener("visibilitychange", onVis); };
+    window.addEventListener("pagehide", onHide);
+    return () => { syncOnStatus = null; syncOnChange = null; document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", onHide); };
   }, []);
   useEffect(() => { if (loaded) syncNow("open"); }, [loaded]);
 
@@ -2811,7 +2834,14 @@ function Streakhouse() {
   const saveSteps = async (val) => {
     const n = parseInt(val != null ? val : stepInput, 10);
     /* sm: steps-modified stamp so the sync merge treats this as a replace */
-    if (!isNaN(n) && n >= 0) { await commitDay(Object.assign({}, day, { steps: n, sm: Date.now() })); setStepInput(""); return true; }
+    if (!isNaN(n) && n >= 0) {
+      await commitDay(Object.assign({}, day, { steps: n, sm: Date.now() }));
+      setStepInput("");
+      /* steps are a paste-and-close action — push right away, don't gamble
+         the 4s debounce against iOS suspending the app */
+      syncFlush("steps");
+      return true;
+    }
     return false;
   };
   /* Reads a step count a Health Shortcut left on the clipboard. iOS shows its
@@ -3998,6 +4028,12 @@ function Streakhouse() {
                 </ol>
                 <div className="qdesc" style={{ marginTop: 8 }}>
                   Daily use: run the Shortcut (home-screen widget, Back Tap, or an evening automation), open this app, tap <b>Paste from Health Shortcut</b>. Two taps, no typing.
+                </div>
+                <div className="qdesc" style={{ marginTop: 8 }}>
+                  <b>Number running high?</b> If the import is roughly double what the Health app shows, your iPhone and Watch are both writing step
+                  samples and the Sum counts the overlap twice. Fix it in the Shortcut: in <b>Find Health Samples</b>, add a <b>Source / Device</b> filter
+                  for just your Watch (it counts wrist steps all day, including phone-in-hand walks). The Health app's own number is the referee —
+                  the import should match it.
                 </div>
               </div>
             )}
