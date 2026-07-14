@@ -146,6 +146,9 @@ function parseStepsText(txt) {
   return nums.length ? Math.max(...nums) : null;
 }
 
+/* keep in lockstep with CACHE in sw.js — both bump on every release */
+const APP_VERSION = "mm-v43";
+
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
 const levelFromXp = (xp) => { let l = 1; while (xp >= xpForLevel(l + 1)) l++; return l; };
@@ -3324,6 +3327,17 @@ function Streakhouse() {
     setWeeklyReview(null);
   };
 
+  /* iOS PWAs can sit on a stale cached version for days — the footer version
+     line makes "which build is this device on?" answerable, and tapping it
+     asks the service worker to check right now */
+  const checkForUpdate = async () => {
+    try {
+      const reg = "serviceWorker" in navigator ? await navigator.serviceWorker.getRegistration() : null;
+      if (reg) { await reg.update(); flash("Checked. A newer version installs and reloads on its own."); }
+      else flash("No service worker registered — nothing to update.");
+    } catch (e) { flash(`Update check failed: ${e.message}`); }
+  };
+
   /* ---------- period tracker ---------- */
   const togglePeriodToday = async () => {
     const next = periodSet.has(today) ? periods.filter((d) => d !== today) : [...periods, today].sort();
@@ -4443,6 +4457,11 @@ function Streakhouse() {
             <h2>Backup</h2>
             <div className="sub">All data lives on this phone only. Export occasionally and keep the file somewhere safe.</div>
             <div className="row"><button style={{ width: "100%" }} onClick={exportData}>Export backup (JSON)</button></div>
+          </div>
+
+          <div className="sub num" style={{ textAlign: "center", marginTop: 4, cursor: "pointer" }} role="button" tabIndex={0}
+            aria-label="App version — tap to check for updates" onClick={checkForUpdate}>
+            Macros &amp; Miles · {APP_VERSION} · tap to check for updates
           </div>
         </React.Fragment>
   );
