@@ -121,6 +121,31 @@ const K = {
   photo: (d) => "sh:photo:" + d,
 };
 
+/* portion text -> fraction of a serving: "0.4", "40%", "2/3". null when unparseable. */
+function parsePortion(str) {
+  const t = String(str || "").trim();
+  let f = null, m;
+  if ((m = t.match(/^(\d+(?:\.\d+)?)\s*%$/))) f = parseFloat(m[1]) / 100;
+  else if ((m = t.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/))) f = parseFloat(m[1]) / parseFloat(m[2]);
+  else if ((m = t.match(/^(\d*\.\d+|\d+(?:\.\d+)?)$/))) f = parseFloat(m[1]);
+  return f != null && isFinite(f) && f >= 0.05 && f <= 10 ? f : null;
+}
+const PRETTY_FRAC = { "1/4": "¼", "1/3": "⅓", "1/2": "½", "2/3": "⅔", "3/4": "¾", "0.25": "¼", "0.5": "½", "0.75": "¾" };
+const prettyPortion = (t) => PRETTY_FRAC[String(t).trim()] || String(t).trim();
+
+/* Health Shortcut clipboards arrive as "7,542", "7542.0", or a whole list of
+   per-source samples on separate lines. Parse each number properly (commas are
+   thousands separators, a trailing .0 is a decimal — never digits to keep) and
+   take the LARGEST: today's count is cumulative, so the biggest reading is the
+   current total. Naive digit-stripping used to concatenate these into a
+   monster number that looked like steps stacking on top of each other. */
+function parseStepsText(txt) {
+  const nums = (String(txt || "").match(/\d[\d,]*(?:\.\d+)?/g) || [])
+    .map((s) => Math.round(parseFloat(s.replace(/,/g, ""))))
+    .filter((n) => isFinite(n) && n > 0 && n < 200000);
+  return nums.length ? Math.max(...nums) : null;
+}
+
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
 const levelFromXp = (xp) => { let l = 1; while (xp >= xpForLevel(l + 1)) l++; return l; };
@@ -607,7 +632,12 @@ function mergeDayRaw(aRaw, bRaw) {
   const out = Object.assign({}, b, a, { /* local scalars win; unions below */
     entries,
     del,
-    steps: Math.max(a.steps || 0, b.steps || 0),
+    /* steps: the newest paste replaces (sm = steps-modified stamp). A bad or
+       stale count must be correctable, so max() only breaks legacy ties. */
+    steps: (a.sm || 0) === (b.sm || 0)
+      ? Math.max(a.steps || 0, b.steps || 0)
+      : ((a.sm || 0) > (b.sm || 0) ? a.steps || 0 : b.steps || 0),
+    sm: Math.max(a.sm || 0, b.sm || 0),
     xp: Math.max(a.xp || 0, b.xp || 0),
     closed: !!(a.closed || b.closed),
     mq,
@@ -2291,8 +2321,8 @@ function Streakhouse() {
     if (!loaded) return;
     try {
       const q = new URLSearchParams(window.location.search);
-      const n = parseInt((q.get("steps") || "").replace(/[^\d]/g, ""), 10);
-      if (!isNaN(n) && n > 0 && n < 200000) {
+      const n = q.has("steps") ? parseStepsText(q.get("steps")) : null;
+      if (n != null && n > 0 && n < 200000) {
         saveSteps(String(n));
         flash(`👟 ${n.toLocaleString()} steps synced from your Shortcut`);
       }
@@ -2583,13 +2613,8 @@ function Streakhouse() {
   ];
   const setCustomPortion = (str) => {
     setPortionInput(str);
-    const t = str.trim();
-    let f = null;
-    let m;
-    if ((m = t.match(/^(\d+(?:\.\d+)?)\s*%$/))) f = parseFloat(m[1]) / 100;
-    else if ((m = t.match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/))) f = parseFloat(m[1]) / parseFloat(m[2]);
-    else if ((m = t.match(/^(\d*\.\d+|\d+(?:\.\d+)?)$/))) f = parseFloat(m[1]);
-    if (f != null && isFinite(f) && f >= 0.05 && f <= 10) { setPortion(f); setPortionLabel(t); }
+    const f = parsePortion(str);
+    if (f != null) { setPortion(f); setPortionLabel(prettyPortion(str)); }
   };
   const logStaple = async (d) => {
     if (portion === 1) { await addEntry(d.name, d.cal, d.p, d.f); return; }
@@ -2616,6 +2641,20 @@ function Streakhouse() {
   };
 
   const removeEntry = async (id) => commitDay(Object.assign({}, day, { entries: day.entries.filter((e) => e.id !== id), del: [...(day.del || []), id] }));
+  /* scale an in-flight edit relative to the values the entry had when the edit
+     box opened, so repeated taps pick a portion rather than compounding */
+  const scaleEdit = (frac, label, pin = "") => setEditEntry(Object.assign({}, editEntry, {
+    pfrac: frac, pin,
+    name: frac === 1 ? editEntry.bname : `${label} × ${editEntry.bname}`,
+    cal: String(Math.round(editEntry.bcal * frac)),
+    p: String(Math.round(editEntry.bp * frac)),
+    f: String(Math.round(editEntry.bf * frac)),
+  }));
+  const scaleEditCustom = (str) => {
+    const frac = parsePortion(str);
+    if (frac == null) setEditEntry(Object.assign({}, editEntry, { pin: str }));
+    else scaleEdit(frac, prettyPortion(str), str);
+  };
   const saveEditEntry = async () => {
     const cal = parseInt(editEntry.cal, 10);
     if (!editEntry.name.trim() || isNaN(cal)) return;
@@ -2631,7 +2670,8 @@ function Streakhouse() {
   };
   const saveSteps = async (val) => {
     const n = parseInt(val != null ? val : stepInput, 10);
-    if (!isNaN(n) && n >= 0) { await commitDay(Object.assign({}, day, { steps: n })); setStepInput(""); return true; }
+    /* sm: steps-modified stamp so the sync merge treats this as a replace */
+    if (!isNaN(n) && n >= 0) { await commitDay(Object.assign({}, day, { steps: n, sm: Date.now() })); setStepInput(""); return true; }
     return false;
   };
   /* Reads a step count a Health Shortcut left on the clipboard. iOS shows its
@@ -2639,9 +2679,8 @@ function Streakhouse() {
   const importClipboardSteps = async () => {
     try {
       const txt = await navigator.clipboard.readText();
-      const m = String(txt || "").replace(/[,.\s]/g, "").match(/\d{2,6}/);
-      if (!m) { flash("No step count found on the clipboard — run the Shortcut first"); return; }
-      const n = parseInt(m[0], 10);
+      const n = parseStepsText(txt);
+      if (n == null) { flash("No step count found on the clipboard — run the Shortcut first"); return; }
       await saveSteps(String(n));
       flash(`👟 ${n.toLocaleString()} steps imported from Health`);
     } catch {
@@ -2704,6 +2743,7 @@ function Streakhouse() {
           cal: e ? String(e.cal) : "",
           p: e ? String(e.p || 0) : "",
           f: e ? String(e.f || 0) : "",
+          portion: "",
           note: notes.join(" · "),
         };
       });
@@ -2728,11 +2768,20 @@ function Streakhouse() {
   const removeEstimateItem = (id) =>
     setEstimateItems((prev) => { const next = prev.filter((it) => it.id !== id); return next.length ? next : null; });
   const readyEstimateItems = (estimateItems || []).filter((it) => it.name.trim() && !isNaN(parseInt(it.cal, 10)));
+  /* portion typed on an estimate row: blank or unparseable means a full serving */
+  const estFrac = (it) => (it.portion && it.portion.trim() ? parsePortion(it.portion) : null) ?? 1;
+  const estCal = (it) => Math.round(parseInt(it.cal, 10) * estFrac(it));
   const addEstimateItems = async () => {
     if (!readyEstimateItems.length) return;
-    await addEntries(readyEstimateItems.map((it) => ({
-      name: it.name, cal: parseInt(it.cal, 10), p: parseInt(it.p, 10) || 0, f: parseInt(it.f, 10) || 0,
-    })));
+    await addEntries(readyEstimateItems.map((it) => {
+      const frac = estFrac(it);
+      return {
+        name: frac === 1 ? it.name : `${prettyPortion(it.portion)} × ${it.name}`,
+        cal: estCal(it),
+        p: Math.round((parseInt(it.p, 10) || 0) * frac),
+        f: Math.round((parseInt(it.f, 10) || 0) * frac),
+      };
+    }));
   };
 
   const submitFood = () => {
@@ -3125,7 +3174,7 @@ function Streakhouse() {
   const finishClose = async () => {
     let d = day;
     const n = parseInt(closeFlow.steps, 10);
-    if (!isNaN(n) && n >= 0 && n !== day.steps) { d = Object.assign({}, d, { steps: n }); }
+    if (!isNaN(n) && n >= 0 && n !== day.steps) { d = Object.assign({}, d, { steps: n, sm: Date.now() }); }
     let wLogged = weights.some((w) => w.d === today);
     if (closeFlow.weight) { const ok = await saveWeight(closeFlow.weight); if (ok) wLogged = true; }
 
@@ -3418,13 +3467,21 @@ function Streakhouse() {
                       <input inputMode="numeric" value={it.cal} onChange={(e) => setEstimateItem(it.id, "cal", e.target.value)} placeholder="cal" aria-label={`Calories for ${it.raw}`} />
                       <input inputMode="numeric" value={it.p} onChange={(e) => setEstimateItem(it.id, "p", e.target.value)} placeholder="prot g" aria-label={`Protein for ${it.raw}`} />
                       <input inputMode="numeric" value={it.f} onChange={(e) => setEstimateItem(it.id, "f", e.target.value)} placeholder="fiber g" aria-label={`Fiber for ${it.raw}`} />
+                      <input value={it.portion} onChange={(e) => setEstimateItem(it.id, "portion", e.target.value)} placeholder="× 1" aria-label={`Portion of serving for ${it.raw}`} style={{ maxWidth: 62 }} title="Portion eaten: 0.5, 50% or 1/2" />
                     </div>
                     <div className="estnote">"{it.raw}" · {it.note}</div>
+                    {it.portion.trim() !== "" && (parsePortion(it.portion) == null
+                      ? <div className="estnote">portion? try 0.5, 50% or 1/2 — using the full serving for now</div>
+                      : estFrac(it) !== 1 && !isNaN(parseInt(it.cal, 10)) && (
+                        <div className="estnote">
+                          {prettyPortion(it.portion)} × serving = {estCal(it)} cal · {Math.round((parseInt(it.p, 10) || 0) * estFrac(it))}g prot · {Math.round((parseInt(it.f, 10) || 0) * estFrac(it))}g fiber
+                        </div>
+                      ))}
                   </div>
                 ))}
                 <div className="row">
                   <button className="pri" style={{ flex: 1 }} onClick={addEstimateItems} disabled={!readyEstimateItems.length}>
-                    Add {readyEstimateItems.length} item{readyEstimateItems.length === 1 ? "" : "s"} · {readyEstimateItems.reduce((a, it) => a + parseInt(it.cal, 10), 0)} cal
+                    Add {readyEstimateItems.length} item{readyEstimateItems.length === 1 ? "" : "s"} · {readyEstimateItems.reduce((a, it) => a + estCal(it), 0)} cal
                   </button>
                   <button onClick={() => { setEstimateItems(null); setEstimateNote(""); }}>Cancel</button>
                 </div>
@@ -3563,6 +3620,15 @@ function Streakhouse() {
                             <input inputMode="numeric" value={editEntry.p} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { p: ev.target.value }))} placeholder="prot g" aria-label="Edit protein" />
                             <input inputMode="numeric" value={editEntry.f} onChange={(ev) => setEditEntry(Object.assign({}, editEntry, { f: ev.target.value }))} placeholder="fiber g" aria-label="Edit fiber" />
                           </div>
+                          <div className="portionrow" role="group" aria-label="Scale this entry to a portion">
+                            <span className="qdesc" style={{ whiteSpace: "nowrap", marginRight: 2 }}>Ate</span>
+                            {PORTIONS.map((pt) => (
+                              <button key={pt.l} type="button" className={`portionchip ${editEntry.pfrac === pt.f && !editEntry.pin ? "on" : ""}`}
+                                aria-label={`Scale entry to ${pt.l} of original`} onClick={() => scaleEdit(pt.f, pt.l)}>{pt.l}</button>
+                            ))}
+                            <input value={editEntry.pin || ""} onChange={(ev) => scaleEditCustom(ev.target.value)} placeholder="40%" aria-label="Custom portion of this entry" style={{ maxWidth: 56 }} />
+                          </div>
+                          <div className="estnote">of the original amounts — calories, protein & fiber all scale together.</div>
                           <div className="row" style={{ marginTop: 6 }}>
                             <button className="pri" style={{ flex: 1 }} onClick={saveEditEntry} disabled={!editEntry.name.trim() || isNaN(parseInt(editEntry.cal, 10))}>Save</button>
                             <button onClick={() => setEditEntry(null)}>Cancel</button>
@@ -3576,7 +3642,7 @@ function Streakhouse() {
                           </span>
                           <span className="actions">
                             <span className="cal num">{e.cal}</span>
-                            <button className="tinybtn" title="Edit" aria-label={`Edit ${e.name}`} onClick={() => setEditEntry({ id: e.id, name: e.name, cal: String(e.cal), p: String(e.p || 0), f: String(e.f || 0) })}>✎</button>
+                            <button className="tinybtn" title="Edit" aria-label={`Edit ${e.name}`} onClick={() => setEditEntry({ id: e.id, name: e.name, cal: String(e.cal), p: String(e.p || 0), f: String(e.f || 0), bname: e.name, bcal: e.cal, bp: e.p || 0, bf: e.f || 0, pfrac: 1, pin: "" })}>✎</button>
                             <button className="tinybtn" title="Save as preset" aria-label={`Save ${e.name} as preset`} onClick={() => savePreset(e.name, e.cal, e.p || 0, e.f || 0)}>☆</button>
                             <button className="tinybtn" title="Delete" aria-label={`Delete ${e.name}`} onClick={() => removeEntry(e.id)}>✕</button>
                           </span>
