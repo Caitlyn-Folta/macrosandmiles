@@ -159,6 +159,7 @@ const shiftDate = (dateStr, delta) => {
   const d = new Date(y, m - 1, dd + delta);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+const mondayOf = (ds) => { const [y, m, dd] = ds.split("-").map(Number); return shiftDate(ds, -((new Date(y, m - 1, dd).getDay() + 6) % 7)); };
 const shortDate = (ds) => { const [, m, d] = ds.split("-"); return `${Number(m)}/${Number(d)}`; };
 const dow = (ds) => { const [y, m, d] = ds.split("-").map(Number); return new Date(y, m - 1, d).getDay(); };
 const isPoolDay = (ds) => { const w = dow(ds); return w === 5 || w === 6 || w === 0; };
@@ -452,7 +453,13 @@ const applyFactor = (entry, name, factor, rough) => ({
   p: Math.round((entry.p || 0) * factor),
   f: Math.round((entry.f || 0) * factor),
   rough,
+  ft: entry.ft || null, /* fiber-freebie tier rides along; applied only at log time */
 });
+
+/* Fiber Freebies: the typed text saying a vegetable is cooked disqualifies the
+   tag even when the words fuzzy-matched a raw entry — cooked greens concentrate
+   calories and are never freebies. */
+const COOKED_RE = /\b(cooked|saut[eé]ed|roasted|steamed|grilled|fried|baked|creamed|stir[- ]?fried)\b/i;
 
 /* ---------- custom foods (user-created via nutrition label scan or manual entry) ----------
    Same shape as FOOD_DB entries: { k: [name], c, p, f, g?, ml?, liquid? }. */
@@ -1239,6 +1246,20 @@ function FiberIcon({ size = 14 }) {
   );
 }
 
+function FreebieLeaf({ size = 13, real }) {
+  /* fiber-freebie badge: leaf inside a neon-lime double-ring — echoes the
+     pantry double-outline treatment at log-entry scale */
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" role="img" aria-label="fiber freebie" style={{ verticalAlign: "-2px", marginLeft: 5 }}>
+      {real != null && <title>{`counted 0 · actually ${real} cal`}</title>}
+      <circle cx="12" cy="12" r="10.4" fill="#1E1A1C" />
+      <circle cx="12" cy="12" r="9" fill="#D9FF7A" stroke="#FFFDF8" strokeWidth="1.6" />
+      <path d="M16.5 7 C 11 7 7.5 9.8 7.2 14.6 c -0.1 1.4 0.5 2.4 1.7 2.4 C 14 17 16.8 12.4 16.5 7 Z"
+        fill="#7ED957" stroke="#1E1A1C" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /* ---------- Pours: one-tap drink logging, each a sticker illustration ---------- */
 const POURS = [
   { id: "espmartini", name: "espresso martini", label: "Esp. martini", cal: 240 },
@@ -1391,15 +1412,17 @@ const STAPLE_CATS = [
   {
     id: "veg", label: "Veg",
     items: [
-      { id: "tomato", name: "cherry tomatoes", label: "Cherry toms", cal: 30, p: 1, f: 2 },
-      { id: "cuke", name: "mini cucumbers", label: "Mini cukes", cal: 30, p: 1, f: 1 },
+      /* ft: fiber-freebie tier (explicit; raw servings only). Peas, carrots,
+         avocado stay untagged by design \u2014 never freebies. */
+      { id: "tomato", name: "cherry tomatoes", label: "Cherry toms", cal: 30, p: 1, f: 2, ft: 2 },
+      { id: "cuke", name: "mini cucumbers", label: "Mini cukes", cal: 30, p: 1, f: 1, ft: 1 },
       { id: "avocado", name: "1/4 avocado", label: "\u00bc Avocado", cal: 60, p: 1, f: 3 },
-      { id: "lettuce", name: "lettuce", label: "Lettuce", cal: 10, p: 1, f: 1 },
-      { id: "broccoli", name: "broccoli", label: "Broccoli", cal: 55, p: 4, f: 5 },
+      { id: "lettuce", name: "lettuce", label: "Lettuce", cal: 10, p: 1, f: 1, ft: 1 },
+      { id: "broccoli", name: "broccoli", label: "Broccoli", cal: 30, p: 2, f: 2, ft: 2 },
       { id: "peas", name: "peas", label: "Peas", cal: 60, p: 4, f: 4 },
       { id: "carrots", name: "baby carrots", label: "Baby carrots", cal: 30, p: 1, f: 2 },
-      { id: "bellpepper", name: "bell pepper", label: "Bell pepper", cal: 30, p: 1, f: 2 },
-      { id: "greenbeans", name: "green beans", label: "Green beans", cal: 35, p: 2, f: 3 },
+      { id: "bellpepper", name: "bell pepper", label: "Bell pepper", cal: 30, p: 1, f: 2, ft: 2 },
+      { id: "greenbeans", name: "green beans", label: "Green beans", cal: 35, p: 2, f: 3, ft: 2 },
     ],
   },
   {
@@ -2202,6 +2225,10 @@ function Streakhouse() {
   const recRef = useRef(null);
   const [editEntry, setEditEntry] = useState(null);
   const [suppDraft, setSuppDraft] = useState("");
+  const [retroFrom, setRetroFrom] = useState("");
+  const [retroTo, setRetroTo] = useState("");
+  const [retroPreview, setRetroPreview] = useState(null);
+  const [retroBusy, setRetroBusy] = useState(false);
   const [customFoods, setCustomFoods] = useState(customLoad);
   const [labelBusy, setLabelBusy] = useState(false);
   const [receiptBusy, setReceiptBusy] = useState(false);
@@ -2417,6 +2444,80 @@ function Streakhouse() {
     setSettings(next); await sset(K.settings, next);
   };
 
+  /* ---------- fiber freebies: tagged raw veg logs at 0 cal while its tier is on.
+     The decision is snapshotted onto the entry at log time (freebieApplied,
+     freebieTier, ocal = real calories); flipping the toggles later never
+     touches what's already logged. Protein and fiber always log real. */
+  const freebieOn = (ft) => (ft === 1 && !!settings.freebie1) || (ft === 2 && !!settings.freebie2);
+  const freebify = (ent, ft, rawText) => {
+    if (!ft || !freebieOn(ft)) return ent;
+    if (rawText && COOKED_RE.test(rawText)) return ent;
+    return Object.assign({}, ent, { ocal: ent.cal, cal: 0, freebieApplied: true, freebieTier: ft });
+  };
+  const toggleFreebieTier = (n) => {
+    const key = n === 1 ? "freebie1" : "freebie2";
+    const next = Object.assign({}, settings, { [key]: !settings[key] });
+    setSettings(next); return sset(K.settings, next);
+  };
+
+  /* retro bulk-apply: a separate, deliberate action. Matches by EXACT food key
+     (portion prefixes like "½ × " stripped) against tagged custom/FOOD_DB
+     entries — conservative on purpose, so "spinach salad with chicken" never
+     zeroes out. Cooked wording disqualifies here too. */
+  const retroTierFor = (name) => {
+    let n = normalizeFood(String(name || "")).trim();
+    n = n.replace(/^.*?×\s*/, "");
+    if (COOKED_RE.test(n)) return null;
+    for (const list of [customFoods, FOOD_DB])
+      for (const it of list) if (it.ft && it.k.some((kk) => kk === n)) return it.ft;
+    return null;
+  };
+  const buildRetroPreview = async () => {
+    if (!settings.freebie1 && !settings.freebie2) { setRetroPreview({ rows: [], err: "Turn on at least one tier above first — the re-apply uses the live toggles." }); return; }
+    if (!retroFrom || !retroTo || retroFrom > retroTo) { setRetroPreview({ rows: [], err: "Pick a valid date range." }); return; }
+    setRetroBusy(true);
+    const rows = [];
+    let oldTotal = 0;
+    for (let ds = retroFrom; ds <= retroTo; ds = shiftDate(ds, 1)) {
+      if (ds > today) break;
+      const d = ds === today ? day : await sget(K.day(ds));
+      if (!d || !d.entries) continue;
+      for (const e of d.entries) {
+        oldTotal += e.cal;
+        if (e.freebieApplied || e.cal <= 0) continue;
+        const ft = retroTierFor(e.name);
+        if (ft && freebieOn(ft)) rows.push({ ds, id: e.id, name: e.name, cal: e.cal, ft });
+      }
+    }
+    const removed = rows.reduce((a, r) => a + r.cal, 0);
+    setRetroPreview({ rows, oldTotal, newTotal: oldTotal - removed });
+    setRetroBusy(false);
+  };
+  const applyRetro = async () => {
+    const pv = retroPreview;
+    if (!pv || !pv.rows.length) return;
+    const byDay = {};
+    for (const r of pv.rows) (byDay[r.ds] = byDay[r.ds] || new Set()).add(r.id);
+    const mark = (d, ids) => Object.assign({}, d, {
+      entries: d.entries.map((e) => (ids.has(e.id)
+        ? Object.assign({}, e, { ocal: e.cal, cal: 0, freebieApplied: true, freebieTier: retroTierFor(e.name), m: Date.now() })
+        : e)),
+    });
+    const histUpdates = {};
+    for (const ds of Object.keys(byDay)) {
+      if (ds === today) { await commitDay(mark(day, byDay[ds])); continue; } /* commitDay refreshes today's history record itself */
+      const d = await sget(K.day(ds));
+      if (!d) continue;
+      const nd = mark(d, byDay[ds]);
+      await sset(K.day(ds), nd);
+      if (history[ds]) histUpdates[ds] = Object.assign({}, history[ds], { c: totalCal(nd) });
+    }
+    if (Object.keys(histUpdates).length)
+      setHistory((prev) => { const merged = Object.assign({}, prev, histUpdates); sset(K.history, merged); return merged; });
+    setRetroPreview(null);
+    flash(`${pv.rows.length} entr${pv.rows.length === 1 ? "y" : "ies"} re-filed as freebies · ${(pv.oldTotal - pv.newTotal).toLocaleString()} cal off the record`);
+  };
+
   /* ---------- supplements: daily reminder banner + check-off ---------- */
   const suppList = settings.supplements || [];
   const suppDone = day.supp || {};
@@ -2593,14 +2694,19 @@ function Streakhouse() {
     /* a fresh log always lands in a visible group */
     const seg = hour < 10 ? "morning" : hour < 15 ? "midday" : "evening";
     setOpenMeals((prev) => (prev.includes(seg) ? prev : [...prev, seg]));
-    const es = items.map((it) => ({
-      id: nextEntryId(),
-      name: (it.name || "").trim() || "Food",
-      cal: Math.max(0, Math.round(it.cal)),
-      p: Math.max(0, Math.round(it.p || 0)),
-      f: Math.max(0, Math.round(it.f || 0)),
-      hour,
-    }));
+    const es = items.map((it) => {
+      const e = {
+        id: nextEntryId(),
+        name: (it.name || "").trim() || "Food",
+        cal: Math.max(0, Math.round(it.cal)),
+        p: Math.max(0, Math.round(it.p || 0)),
+        f: Math.max(0, Math.round(it.f || 0)),
+        hour,
+      };
+      /* freebie snapshot from log time rides along on the entry */
+      if (it.freebieApplied) { e.freebieApplied = true; e.freebieTier = it.freebieTier; e.ocal = Math.round(it.ocal || 0); }
+      return e;
+    });
     await commitDay(Object.assign({}, day, { entries: [...day.entries, ...es], xp: day.xp + 5 * es.length }));
     await awardXp(5 * es.length);
 
@@ -2641,9 +2747,11 @@ function Streakhouse() {
     if (f != null) { setPortion(f); setPortionLabel(prettyPortion(str)); }
   };
   const logStaple = async (d) => {
-    if (portion === 1) { await addEntry(d.name, d.cal, d.p, d.f); return; }
-    await addEntry(`${portionLabel} \u00d7 ${d.name}`, Math.round(d.cal * portion), Math.round(d.p * portion), Math.round(d.f * portion));
-    setPortion(1); setPortionLabel("1"); setPortionCustom(false); setPortionInput("");
+    const base = portion === 1
+      ? { name: d.name, cal: d.cal, p: d.p, f: d.f }
+      : { name: `${portionLabel} \u00d7 ${d.name}`, cal: Math.round(d.cal * portion), p: Math.round(d.p * portion), f: Math.round(d.f * portion) };
+    await addEntries([freebify(base, d.ft || null, null)]);
+    if (portion !== 1) { setPortion(1); setPortionLabel("1"); setPortionCustom(false); setPortionInput(""); }
   };
 
   /* Bites, Licks & Tastes: one running 30-cal-per-tap entry for the day */
@@ -2767,6 +2875,7 @@ function Streakhouse() {
           cal: e ? String(e.cal) : "",
           p: e ? String(e.p || 0) : "",
           f: e ? String(e.f || 0) : "",
+          ft: (e && e.ft) || null,
           portion: "",
           note: notes.join(" · "),
         };
@@ -2795,16 +2904,20 @@ function Streakhouse() {
   /* portion typed on an estimate row: blank or unparseable means a full serving */
   const estFrac = (it) => (it.portion && it.portion.trim() ? parsePortion(it.portion) : null) ?? 1;
   const estCal = (it) => Math.round(parseInt(it.cal, 10) * estFrac(it));
+  /* row is a live freebie: tagged, tier toggle on, and not described as cooked */
+  const estFreebie = (it) => !!(it.ft && freebieOn(it.ft) && !COOKED_RE.test(it.raw || ""));
+  const estLogCal = (it) => (estFreebie(it) ? 0 : estCal(it));
   const addEstimateItems = async () => {
     if (!readyEstimateItems.length) return;
     await addEntries(readyEstimateItems.map((it) => {
       const frac = estFrac(it);
-      return {
+      const base = {
         name: frac === 1 ? it.name : `${prettyPortion(it.portion)} × ${it.name}`,
         cal: estCal(it),
         p: Math.round((parseInt(it.p, 10) || 0) * frac),
         f: Math.round((parseInt(it.f, 10) || 0) * frac),
       };
+      return freebify(base, it.ft, it.raw);
     }));
   };
 
@@ -2850,6 +2963,7 @@ function Streakhouse() {
     const c = Math.max(0, Math.round(cal));
     const p = Math.max(0, Math.round(parseFloat(labelForm.p) || 0));
     const f = Math.max(0, Math.round(parseFloat(labelForm.f) || 0));
+    const ft = labelForm.ft ? parseInt(labelForm.ft, 10) : null;
     if (labelForm.saveDb) {
       const key = name.toLowerCase();
       const entry = { k: [key], c, p, f };
@@ -2857,10 +2971,11 @@ function Streakhouse() {
       if (!isNaN(g) && g > 0) {
         if (labelForm.liquid) { entry.ml = g; entry.liquid = true; } else entry.g = g;
       }
+      if (ft) entry.ft = ft;
       const next = [...customFoods.filter((x) => x.k[0] !== key), entry];
       setCustomFoods(next); customStore(next);
     }
-    if (labelForm.logToday) await addEntry(name, c, p, f);
+    if (labelForm.logToday) await addEntries([freebify({ name, cal: c, p, f }, ft, name)]);
     flash(labelForm.logToday && labelForm.saveDb ? `"${name}" logged and saved to your database`
       : labelForm.saveDb ? `"${name}" added to your food database` : `"${name}" logged`);
     setLabelForm(null); setLabelNote("");
@@ -3499,7 +3614,7 @@ function Streakhouse() {
             {estimateItems && (
               <div>
                 {estimateItems.map((it) => (
-                  <div className="estitem" key={it.id}>
+                  <div className={`estitem ${estFreebie(it) ? "freebierow" : ""}`} key={it.id}>
                     <div className="row" style={{ marginTop: 0 }}>
                       <input value={it.name} onChange={(e) => setEstimateItem(it.id, "name", e.target.value)} aria-label={`Name for ${it.raw}`} />
                       <button className="tinybtn" title="Remove item" aria-label={`Remove ${it.raw}`} onClick={() => removeEstimateItem(it.id)}>✕</button>
@@ -3511,6 +3626,7 @@ function Streakhouse() {
                       <input value={it.portion} onChange={(e) => setEstimateItem(it.id, "portion", e.target.value)} placeholder="× 1" aria-label={`Portion of serving for ${it.raw}`} style={{ maxWidth: 62 }} title="Portion eaten: 0.5, 50% or 1/2" />
                     </div>
                     <div className="estnote">"{it.raw}" · {it.note}</div>
+                    {estFreebie(it) && <div className="estnote" style={{ color: "#3E8E2A" }}><FreebieLeaf size={12} /> fiber freebie (tier {it.ft}) — logs at 0 cal; protein & fiber log as-is</div>}
                     {it.portion.trim() !== "" && (parsePortion(it.portion) == null
                       ? <div className="estnote">portion? try 0.5, 50% or 1/2 — using the full serving for now</div>
                       : estFrac(it) !== 1 && !isNaN(parseInt(it.cal, 10)) && (
@@ -3522,7 +3638,7 @@ function Streakhouse() {
                 ))}
                 <div className="row">
                   <button className="pri" style={{ flex: 1 }} onClick={addEstimateItems} disabled={!readyEstimateItems.length}>
-                    Add {readyEstimateItems.length} item{readyEstimateItems.length === 1 ? "" : "s"} · {readyEstimateItems.reduce((a, it) => a + estCal(it), 0)} cal
+                    Add {readyEstimateItems.length} item{readyEstimateItems.length === 1 ? "" : "s"} · {readyEstimateItems.reduce((a, it) => a + estLogCal(it), 0)} cal
                   </button>
                   <button onClick={() => { setEstimateItems(null); setEstimateNote(""); }}>Cancel</button>
                 </div>
@@ -3584,6 +3700,11 @@ function Streakhouse() {
                 </div>
                 <div className="row" style={{ marginTop: 6 }}>
                   <input inputMode="decimal" value={labelForm.g} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { g: e.target.value }))} placeholder="serving size (g or ml, optional)" aria-label="Serving size in grams or milliliters" />
+                  <select value={labelForm.ft || ""} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { ft: e.target.value }))} aria-label="Fiber freebie tier">
+                    <option value="">no freebie tier</option>
+                    <option value="1">freebie tier 1 (near-zero raw veg)</option>
+                    <option value="2">freebie tier 2 (low-cal raw veg)</option>
+                  </select>
                   <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
                     <input type="checkbox" style={{ width: "auto" }} checked={labelForm.liquid} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { liquid: e.target.checked }))} /> it's a drink
                   </label>
@@ -3679,6 +3800,7 @@ function Streakhouse() {
                         <div className="entry" key={e.id}>
                           <span className="nm">
                             {e.name}
+                            {e.freebieApplied && <FreebieLeaf size={13} real={e.ocal} />}
                             {(e.p || e.f) ? <span className="entrymacros num"><ProteinIcon size={11} />{e.p || 0} <FiberIcon size={11} />{e.f || 0}</span> : null}
                           </span>
                           <span className="actions">
@@ -3729,12 +3851,14 @@ function Streakhouse() {
                     <div className="pours" style={{ marginTop: 10, marginBottom: 6 }}>
                       {cat.items.map((d) => {
                         const n = day.entries.filter((en) => en.name === d.name).length;
+                        const fb = !!(d.ft && freebieOn(d.ft)); /* live state, not just the tag */
                         return (
-                          <button key={d.id} className="pourbtn" disabled={day.closed} onClick={() => logStaple(d)} aria-label={`Log ${d.name}, ${d.cal} calories`}>
+                          <button key={d.id} className={`pourbtn ${fb ? "freebie" : ""}`} disabled={day.closed} onClick={() => logStaple(d)}
+                            aria-label={`Log ${d.name}, ${fb ? "0 calories (fiber freebie)" : `${d.cal} calories`}`}>
                             {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
                             <StapleIcon kind={d.id} />
                             <span className="pl">{d.label}</span>
-                            <span className="pc num">{d.cal}</span>
+                            <span className="pc num">{fb ? "0 cal" : d.cal}</span>
                           </button>
                         );
                       })}
@@ -4116,6 +4240,57 @@ function Streakhouse() {
           </div>
 
           <div className="card">
+            <h2>🥬 Fiber freebies</h2>
+            <div className="sub">
+              Tagged raw vegetables can log at 0 calories. The call is made at the moment of logging — flipping these later never
+              rewrites entries already on the books. Protein and fiber always log at real values, and cooked versions never qualify.
+            </div>
+            <label className="qdesc" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, cursor: "pointer" }}>
+              <input type="checkbox" style={{ width: "auto", marginTop: 2 }} checked={!!settings.freebie1} onChange={() => toggleFreebieTier(1)} aria-label="Freebie tier 1 (near-zero cal veggies)" />
+              <span><b>Tier 1</b> — near-zero raw greens, ≤10 cal (lettuce, spinach, celery, cucumber, radishes…)</span>
+            </label>
+            <label className="qdesc" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, cursor: "pointer" }}>
+              <input type="checkbox" style={{ width: "auto", marginTop: 2 }} checked={!!settings.freebie2} onChange={() => toggleFreebieTier(2)} aria-label="Freebie tier 2 (low-cal veggies)" />
+              <span><b>Tier 2</b> — low-cal raw veg, ~25–30 cal/serving (broccoli, peppers, mushrooms, tomato…)</span>
+            </label>
+
+            <div className="qname" style={{ marginTop: 16 }}>Re-apply to past entries</div>
+            <div className="qdesc">Separate, deliberate action: re-files eligible logged entries in a date range under whichever tiers are on right now, and recalculates those days' totals (the weekly bank follows). Nothing changes until you confirm.</div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <input type="date" value={retroFrom} onChange={(e) => { setRetroFrom(e.target.value); setRetroPreview(null); }} aria-label="Re-apply from date" />
+              <input type="date" value={retroTo} onChange={(e) => { setRetroTo(e.target.value); setRetroPreview(null); }} aria-label="Re-apply to date" />
+            </div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <button style={{ flex: 1 }} onClick={() => { setRetroFrom(mondayOf(today)); setRetroTo(today); setRetroPreview(null); }}>This week</button>
+              <button style={{ flex: 1 }} onClick={() => { const m = mondayOf(today); setRetroFrom(shiftDate(m, -7)); setRetroTo(shiftDate(m, -1)); setRetroPreview(null); }}>Last week</button>
+              <button className="ember" style={{ flex: 1 }} disabled={retroBusy || !retroFrom || !retroTo} onClick={buildRetroPreview}>{retroBusy ? "reading the books…" : "Preview"}</button>
+            </div>
+            {retroPreview && (retroPreview.err ? (
+              <div className="note">{retroPreview.err}</div>
+            ) : retroPreview.rows.length === 0 ? (
+              <div className="note">No eligible entries in that range. Entries already filed as freebies, cooked items, and untagged foods don't count.</div>
+            ) : (
+              <div className="estitem" style={{ marginTop: 10 }}>
+                <div className="qname">This edits history. The numbers will testify accordingly.</div>
+                {retroPreview.rows.map((r) => (
+                  <div className="xpline" key={`${r.ds}-${r.id}`}>
+                    <span>{r.ds.slice(5)} · {r.name} <span style={{ color: "#5C5254" }}>(tier {r.ft})</span></span>
+                    <span className="num">{r.cal} → 0</span>
+                  </div>
+                ))}
+                <div className="xpline" style={{ marginTop: 6 }}>
+                  <span><b>Range total</b></span>
+                  <span className="num">{retroPreview.oldTotal.toLocaleString()} → {retroPreview.newTotal.toLocaleString()} cal</span>
+                </div>
+                <div className="row" style={{ marginTop: 8 }}>
+                  <button className="pri" style={{ flex: 1 }} onClick={applyRetro}>Apply to {retroPreview.rows.length} entr{retroPreview.rows.length === 1 ? "y" : "ies"}</button>
+                  <button onClick={() => setRetroPreview(null)}>Cancel</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="card">
             <h2>💊 Supplements</h2>
             <div className="sub">List your daily supplements and a reminder banner appears at the top of the eats page — tap each one off as you take it. Resets every morning.</div>
             <div className="row" style={{ marginTop: 8 }}>
@@ -4315,7 +4490,13 @@ function Streakhouse() {
         .pourbtn .pl { font-size:10px; font-weight:800; letter-spacing:.2px; color:#1E1A1C; line-height:1.1; }
         .pourbtn .pc { font-size:9px; color:#5C5254; }
         .pourbadge { position:absolute; top:-9px; right:-9px; background:#FF5FA2; color:#1E1A1C; border:2px solid #1E1A1C; border-radius:999px; min-width:21px; height:21px; padding:0 4px; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; box-shadow:2px 2px 0 #1E1A1C; }
+        /* fiber-freebie live treatment: neon lime + double outline (inner ink
+           border, cream gap, outer ink ring) on top of the usual hard shadow */
+        button.pourbtn.freebie { background:#D9FF7A; box-shadow:0 0 0 2px #FFFDF8, 0 0 0 4px #1E1A1C, 5px 5px 0 #1E1A1C; }
+        button.pourbtn.freebie:hover { box-shadow:0 0 0 2px #FFFDF8, 0 0 0 4px #1E1A1C, 6px 6px 0 #1E1A1C; }
+        button.pourbtn.freebie:active { box-shadow:0 0 0 2px #FFFDF8, 0 0 0 4px #1E1A1C; }
         .estitem { background:#FAF3E7; border:2.5px dashed #1E1A1C; border-radius:14px; padding:10px; margin-top:10px; }
+        .estitem.freebierow { background:#EFFFC8; border-style:solid; box-shadow:0 0 0 2px #FFFDF8, 0 0 0 4px #1E1A1C; margin-left:5px; margin-right:5px; }
         .estitem input { background:#fff; }
         .estnote { font-size:11px; color:#5C5254; font-weight:800; margin-top:6px; }
         .entrymacros { font-size:11px; color:#5C5254; font-weight:800; margin-left:6px; }

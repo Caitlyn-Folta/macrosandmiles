@@ -1,7 +1,11 @@
 /* Macros & Miles — built-in food table (plain script, no JSX).
    Loaded before the app script in index.html. Per-serving values:
    c calories, p protein g, f fiber g, g grams/serving (enables
-   "6 oz chicken" scaling), ml + liquid: true for drinks. */
+   "6 oz chicken" scaling), ml + liquid: true for drinks.
+   ft: 1|2 = Fiber Freebie tier (explicit tag only, never inferred from the
+   name). Tier 1 = near-zero-cal raw greens; tier 2 = low-cal raw veg
+   (~25-30 cal/serving). Only RAW entries carry the tag — cooked variants
+   are separate untagged entries with real cooked calories. */
 
 /* per-serving values; g = grams/serving, ml = milliliters/serving */
 const FOOD_DB = [
@@ -100,13 +104,40 @@ const FOOD_DB = [
   { k: ["ham and cheese"], c: 400, p: 22, f: 2, g: 220 },
   { k: ["sweet and sour chicken", "sweet and sour"], c: 550, p: 25, f: 2, g: 300 },
   { k: ["peas"], c: 60, p: 4, f: 4, g: 80 },
-  { k: ["lettuce"], c: 10, p: 1, f: 1, g: 50 },
+  { k: ["lettuce", "iceberg lettuce", "iceberg"], c: 10, p: 1, f: 1, g: 50, ft: 1 },
   { k: ["baby carrots", "carrots", "carrot"], c: 30, p: 1, f: 2, g: 85 },
   { k: ["watermelon"], c: 45, p: 1, f: 1, g: 150 },
   { k: ["mandarin", "mandarins", "clementine"], c: 50, p: 1, f: 2, g: 88 },
   { k: ["peach"], c: 60, p: 1, f: 2, g: 150 },
-  { k: ["bell pepper", "bell peppers"], c: 30, p: 1, f: 2, g: 150 },
-  { k: ["green beans"], c: 35, p: 2, f: 3, g: 125 },
+  { k: ["bell pepper", "bell peppers"], c: 30, p: 1, f: 2, g: 150, ft: 2 },
+  { k: ["green beans"], c: 35, p: 2, f: 3, g: 125, ft: 2 },
+  { k: ["cooked green beans", "sauteed green beans", "roasted green beans"], c: 44, p: 2, f: 4, g: 125 },
+  { k: ["celery"], c: 10, p: 0, f: 1, g: 110, ft: 1 },
+  { k: ["radishes", "radish"], c: 5, p: 0, f: 1, g: 60, ft: 1 },
+  { k: ["arugula"], c: 5, p: 1, f: 0, g: 20, ft: 1 },
+  { k: ["spinach"], c: 7, p: 1, f: 1, g: 30, ft: 1 },
+  { k: ["cooked spinach", "sauteed spinach", "steamed spinach", "creamed spinach"], c: 41, p: 5, f: 4, g: 180 },
+  { k: ["romaine", "romaine lettuce"], c: 8, p: 1, f: 1, g: 47, ft: 1 },
+  { k: ["bok choy"], c: 9, p: 1, f: 1, g: 70, ft: 1 },
+  { k: ["cooked bok choy"], c: 20, p: 3, f: 2, g: 170 },
+  { k: ["watercress"], c: 4, p: 1, f: 0, g: 34, ft: 1 },
+  { k: ["endive"], c: 8, p: 1, f: 2, g: 50, ft: 1 },
+  { k: ["napa cabbage"], c: 12, p: 1, f: 1, g: 76, ft: 1 },
+  { k: ["mushrooms", "mushroom"], c: 15, p: 2, f: 1, g: 70, ft: 2 },
+  { k: ["cooked mushrooms", "sauteed mushrooms", "roasted mushrooms"], c: 44, p: 3, f: 3, g: 156 },
+  { k: ["cabbage"], c: 22, p: 1, f: 2, g: 89, ft: 2 },
+  { k: ["cooked cabbage", "sauteed cabbage"], c: 35, p: 2, f: 3, g: 150 },
+  { k: ["zucchini"], c: 20, p: 1, f: 1, g: 124, ft: 2 },
+  { k: ["cooked zucchini", "sauteed zucchini", "roasted zucchini", "grilled zucchini"], c: 29, p: 1, f: 2, g: 180 },
+  { k: ["cauliflower"], c: 27, p: 2, f: 2, g: 107, ft: 2 },
+  { k: ["cooked cauliflower", "roasted cauliflower", "cauliflower rice"], c: 29, p: 2, f: 3, g: 124 },
+  { k: ["asparagus"], c: 27, p: 3, f: 3, g: 134, ft: 2 },
+  { k: ["cooked asparagus", "roasted asparagus", "grilled asparagus"], c: 40, p: 4, f: 4, g: 180 },
+  { k: ["kale"], c: 28, p: 2, f: 2, g: 80, ft: 2 },
+  { k: ["cooked kale", "sauteed kale"], c: 36, p: 2, f: 3, g: 118 },
+  { k: ["swiss chard", "chard"], c: 7, p: 1, f: 1, g: 36, ft: 2 },
+  { k: ["cooked swiss chard", "cooked chard", "sauteed chard"], c: 35, p: 3, f: 4, g: 175 },
+  { k: ["alfalfa sprouts", "sprouts"], c: 8, p: 1, f: 1, g: 33, ft: 2 },
   { k: ["low carb tortilla", "carb balance tortilla"], c: 70, p: 5, f: 12, g: 42 },
   { k: ["sola bagel", "sola"], c: 90, p: 9, f: 14, g: 80 },
   { k: ["sourdough", "sourdough slice", "sourdough bread"], c: 100, p: 3, f: 1, g: 36 },
@@ -124,14 +155,16 @@ const FOOD_DB = [
   { k: ["pasta", "spaghetti"], c: 400, p: 14, f: 3, g: 250 },
   { k: ["sushi roll", "sushi"], c: 300, p: 9, f: 2, g: 190 },
   { k: ["poke"], c: 550, p: 35, f: 6, g: 400 },
-  { k: ["broccoli"], c: 55, p: 4, f: 5, g: 150 },
+  { k: ["broccoli"], c: 30, p: 2, f: 2, g: 90, ft: 2 },
+  { k: ["cooked broccoli", "steamed broccoli", "roasted broccoli"], c: 55, p: 4, f: 5, g: 150 },
   { k: ["beans", "black beans"], c: 110, p: 7, f: 7, g: 130 },
   { k: ["lowfat cottage cheese", "low fat cottage cheese", "good culture"], c: 90, p: 14, f: 0, g: 113 },
   { k: ["cottage cheese"], c: 110, p: 12, f: 0, g: 110 },
   { k: ["lowfat cheese", "low fat cheese", "reduced fat cheese"], c: 70, p: 8, f: 0, g: 28 },
   { k: ["lowfat greek yogurt", "low fat greek yogurt", "2% greek yogurt"], c: 150, p: 20, f: 0, g: 170 },
-  { k: ["cherry tomatoes", "cherry tomato"], c: 30, p: 1, f: 2, g: 150 },
-  { k: ["mini cucumbers", "mini cucumber", "mini cukes", "cucumber"], c: 30, p: 1, f: 1, g: 200 },
+  { k: ["cherry tomatoes", "cherry tomato"], c: 30, p: 1, f: 2, g: 150, ft: 2 },
+  { k: ["tomato", "tomatoes"], c: 22, p: 1, f: 2, g: 123, ft: 2 },
+  { k: ["mini cucumbers", "mini cucumber", "mini cukes", "cucumber", "cucumbers"], c: 30, p: 1, f: 1, g: 200, ft: 1 },
   { k: ["dark chocolate square", "dark chocolate"], c: 55, p: 1, f: 1, g: 10 },
   { k: ["skinny pop", "skinnypop", "popcorn", "lesser evil"], c: 150, p: 2, f: 3, g: 28 },
   { k: ["string cheese"], c: 80, p: 7, f: 0, g: 28 },
