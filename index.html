@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v47";
+const APP_VERSION = "mm-v48";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -1403,6 +1403,7 @@ const STAPLE_CATS = [
     /* grouped by type: cheeses up top, then meats, then the rest */
     items: [
       { id: "cottage", name: "lowfat cottage cheese", label: "Cottage ch.", cal: 90, p: 14, f: 0 , sv: "113g · ½ cup" },
+      { id: "yogurt", name: "lowfat greek yogurt", label: "Greek yog.", cal: 150, p: 20, f: 0 , sv: "170g · ¾ cup" },
       { id: "cheese", name: "lowfat cheese", label: "Cheese", cal: 70, p: 8, f: 0 , sv: "28g · ¼ cup" },
       { id: "babybel", name: "babybel light", label: "Babybel", cal: 50, p: 6, f: 0 , sv: "20g · 1 round" },
       { id: "parm", name: "parmesan", label: "Parm", cal: 45, p: 4, f: 0 , sv: "10g · 2 tbsp" },
@@ -1417,7 +1418,6 @@ const STAPLE_CATS = [
       { id: "chomps", name: "chomps stick", label: "Chomps", cal: 100, p: 10, f: 0 , sv: "32g · 1 stick" },
       { id: "egg", name: "egg", label: "Egg", cal: 75, p: 6, f: 0 , sv: "50g · 1 large" },
       { id: "milk", name: "fairlife lowfat milk", label: "Milk", cal: 110, p: 13, f: 0 , sv: "240g · 1 cup" },
-      { id: "yogurt", name: "lowfat greek yogurt", label: "Greek yog.", cal: 150, p: 20, f: 0 , sv: "170g · ¾ cup" },
       { id: "proteinpowder", name: "protein powder scoop", label: "Protein scoop", cal: 110, p: 20, f: 0 , sv: "31g · 1 scoop" },
       { id: "builtbar", name: "built puff chocolate chunk bar", label: "Built puff", cal: 130, p: 17, f: 4 , sv: "40g · 1 bar" },
     ],
