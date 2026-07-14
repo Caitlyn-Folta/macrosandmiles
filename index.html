@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v48";
+const APP_VERSION = "mm-v49";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -1177,7 +1177,7 @@ function buildBriefing(yds, history, settings) {
   let headline, tone;
 
   if (rec && rec.shield) {
-    headline = "Yesterday was shielded. 🛡";
+    headline = "Yesterday was shielded."
     const shieldLine = pickLine("dataReactive:shieldUsed");
     tone = shieldLine ? shieldLine.text : "A banked perfect-day token covered it automatically. That's not luck — that's savings.";
   } else if (!rec || (!rec.e && !rec.s)) {
@@ -1190,8 +1190,8 @@ function buildBriefing(yds, history, settings) {
   } else {
     const onPlan = rec.c > 0 && onPlanCal(yds, history, settings, null, null);
     const stepsHit = rec.s >= settings.stepGoal;
-    if (rec.e > 0) facts.push(`🧾 ${rec.e} item${rec.e === 1 ? "" : "s"} logged · ${rec.c.toLocaleString()} cal${onPlan ? " — on plan" : ""}`);
-    if (rec.s > 0) facts.push(`👟 ${rec.s.toLocaleString()} steps${stepsHit ? " — goal hit" : ` of ${settings.stepGoal.toLocaleString()}`}`);
+    if (rec.e > 0) facts.push(`${rec.e} item${rec.e === 1 ? "" : "s"} logged · ${rec.c.toLocaleString()} cal${onPlan ? " — on plan" : ""}`);
+    if (rec.s > 0) facts.push(`${rec.s.toLocaleString()} steps${stepsHit ? " — goal hit" : ` of ${settings.stepGoal.toLocaleString()}`}`);
     if ((rec.p || 0) >= settings.proteinGoal) facts.push(`protein goal cleared (${rec.p}g)`);
     if ((rec.f || 0) >= settings.fiberGoal) facts.push(`fiber goal cleared (${rec.f}g)`);
 
@@ -1281,6 +1281,34 @@ function FreebieLeaf({ size = 13, real }) {
         fill="#7ED957" stroke="#1E1A1C" strokeWidth="1.6" strokeLinejoin="round" />
     </svg>
   );
+}
+
+
+/* ---------- MIcon: small UI icons in the house sticker style (emoji-free chrome) ---------- */
+function MIcon({ k, size = 15 }) {
+  const st = { stroke: INK_ICON, strokeWidth: 1.9, strokeLinejoin: "round", strokeLinecap: "round" };
+  const art = {
+    clock: <g><circle cx="12" cy="13" r="8" fill="#FFC93C" {...st} /><path d="M12 9 v 4.4 l 3 1.8" fill="none" {...st} /><path d="M5 6 L 8 4 M 19 6 L 16 4" fill="none" {...st} /></g>,
+    watch: <g><rect x="10" y="2.5" width="4" height="3" rx="1" fill="#7C48D8" {...st} strokeWidth="1.5" /><circle cx="12" cy="13.5" r="8" fill="#FFFDF8" {...st} /><path d="M12 9.5 v 4 l 2.8 1.8" fill="none" {...st} /></g>,
+    scale: <g><path d="M12 4.5 v 14" fill="none" {...st} /><path d="M4.5 7.5 h 15" fill="none" {...st} /><path d="M7 7.5 L 4.5 12.5 a 2.8 2.4 0 0 0 5 0 Z" fill="#7ED957" stroke={INK_ICON} strokeWidth="1.5" strokeLinejoin="round" /><path d="M17 7.5 L 14.5 12.5 a 2.8 2.4 0 0 0 5 0 Z" fill="#7ED957" stroke={INK_ICON} strokeWidth="1.5" strokeLinejoin="round" /><path d="M8.5 19.5 h 7" fill="none" {...st} /></g>,
+    spark: <g><path d="M11.5 3.5 l 1.9 5.6 l 5.6 1.9 l -5.6 1.9 l -1.9 5.6 l -1.9 -5.6 l -5.6 -1.9 l 5.6 -1.9 Z" fill="#FFC93C" {...st} strokeWidth="1.7" /><circle cx="19" cy="4.8" r="1.7" fill="#FF5FA2" stroke={INK_ICON} strokeWidth="1.2" /></g>,
+    fork: <g><path d="M7.5 3.5 v 6.5 M 5 3.5 v 4 M 10 3.5 v 4 M 5 7.5 a 2.5 2.5 0 0 0 5 0 M 7.5 10 v 10.5" fill="none" {...st} /><path d="M16 3.5 c -1.8 3 -1.8 5.5 0 7.5 v 9.5 M 16 3.5 c 1.8 3 1.8 5.5 0 7.5" fill="none" {...st} /></g>,
+    mic: <g><rect x="9" y="3" width="6" height="11" rx="3" fill="#FF5FA2" {...st} /><path d="M6 11.5 a 6 6 0 0 0 12 0 M 12 17.5 v 3 M 9 20.5 h 6" fill="none" {...st} /></g>,
+    bank: <g><ellipse cx="11.5" cy="13.5" rx="8.5" ry="6.3" fill="#FF9FCB" {...st} /><path d="M9 8 h 5" fill="none" {...st} strokeWidth="1.6" /><path d="M19.6 12 c 1.5 0 2 .9 2 1.9" fill="none" {...st} strokeWidth="1.6" /><path d="M7.5 19 v 1.8 M 15.5 19 v 1.8" fill="none" {...st} /><circle cx="7.8" cy="12.6" r="1" fill={INK_ICON} /></g>,
+    shoe: <g><path d="M4 15.5 c 0 -2.4 1.1 -4.4 3 -4.4 c 2 0 3.1 1.5 5.1 2 c 3 .8 6.9 1 7.9 3 v 1.9 H 4 Z" fill="#7ED957" {...st} /><path d="M4 18 h 16" fill="none" {...st} /><path d="M10.6 12.8 l 1.4 -1.5 M 13.2 13.7 l 1.4 -1.5" fill="none" {...st} strokeWidth="1.4" /></g>,
+    pill: <g transform="rotate(-35 12 12)"><rect x="4" y="8.5" width="16" height="7" rx="3.5" fill="#FFFDF8" {...st} /><path d="M12 8.5 h 4.5 a 3.5 3.5 0 0 1 0 7 H 12 Z" fill="#FF5FA2" stroke={INK_ICON} strokeWidth="1.5" /></g>,
+    chat: <g><path d="M4 5.5 h 16 v 10 h -8.5 l -4 4 v -4 H 4 Z" fill="#EDE3FF" {...st} /><circle cx="9" cy="10.5" r="1.1" fill={INK_ICON} /><circle cx="12.5" cy="10.5" r="1.1" fill={INK_ICON} /><circle cx="16" cy="10.5" r="1.1" fill={INK_ICON} /></g>,
+    send: <g><rect x="8" y="3" width="10" height="18" rx="2.5" fill="#C9CFD9" {...st} /><path d="M11.5 6 h 3" fill="none" {...st} strokeWidth="1.4" /><path d="M2 12 h 6.5 M 5.8 9 l 3 3 l -3 3" fill="none" {...st} strokeWidth="2" /></g>,
+    camera: <g><rect x="3" y="7" width="18" height="12" rx="2.5" fill="#C9CFD9" {...st} /><path d="M8.5 7 L 10 4.5 h 4 L 15.5 7" fill="#C9CFD9" {...st} /><circle cx="12" cy="13" r="3.6" fill="#FFFDF8" {...st} /><circle cx="12" cy="13" r="1.4" fill={INK_ICON} /></g>,
+    receipt: <g><path d="M6 3.5 h 12 v 16.5 l -2 -1.5 l -2 1.5 l -2 -1.5 l -2 1.5 l -2 -1.5 l -2 1.5 Z" fill="#FFFDF8" {...st} /><path d="M9 8 h 6 M 9 11.5 h 6 M 9 15 h 4" fill="none" {...st} strokeWidth="1.4" /></g>,
+    syncy: <g><path d="M6 10 a 6.5 6.5 0 0 1 11 -2.8 M 17.5 3.5 v 4 h -4" fill="none" {...st} /><path d="M18 14 a 6.5 6.5 0 0 1 -11 2.8 M 6.5 20.5 v -4 h 4" fill="none" {...st} /></g>,
+    lock: <g><rect x="6" y="10.5" width="12" height="9.5" rx="2.5" fill="#FFC93C" {...st} /><path d="M8.5 10.5 v -3 a 3.5 3.5 0 0 1 7 0 v 3" fill="none" {...st} /><circle cx="12" cy="15.2" r="1.4" fill={INK_ICON} /></g>,
+    flame: <g><path d="M12 3 c 1 3.2 4.2 4.7 4.2 8.7 a 4.9 4.9 0 0 1 -9.8 0 c 0 -2.6 1.2 -3.7 2.2 -5.3 c .8 1 1.3 1.6 1.9 1.6 c .9 0 1.5 -2 1.5 -5 Z" fill="#FF9F1C" {...st} strokeWidth="1.7" /><path d="M12 19.6 a 2.5 2.5 0 0 0 2.5 -2.5 c 0 -1.5 -1.3 -1.9 -2.5 -3.8 c -1.2 1.9 -2.5 2.3 -2.5 3.8 A 2.5 2.5 0 0 0 12 19.6 Z" fill="#FFC93C" stroke={INK_ICON} strokeWidth="1.2" /></g>,
+    drop: <g><path d="M12 3 c 3 4.4 5.8 7.3 5.8 11.2 a 5.8 5.8 0 0 1 -11.6 0 C 6.2 10.3 9 7.4 12 3 Z" fill="#FF5FA2" {...st} /><path d="M9.6 15 a 2.7 2.7 0 0 0 1.9 2" fill="none" stroke="#FFF" strokeWidth="1.5" strokeLinecap="round" /></g>,
+    shield: <g><path d="M12 3 l 7.5 2.5 v 5.8 c 0 5 -3.5 8.2 -7.5 9.7 c -4 -1.5 -7.5 -4.7 -7.5 -9.7 v -5.8 Z" fill="#7C48D8" {...st} /><path d="M9 11.5 l 2.2 2.3 l 4 -4.3" fill="none" stroke="#FFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></g>,
+    dotgreen: <g><circle cx="12" cy="12" r="7.5" fill="#7ED957" {...st} /></g>,
+  };
+  return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ verticalAlign: "-2px" }}>{art[k]}</svg>;
 }
 
 /* ---------- Pours: one-tap drink logging, each a sticker illustration ---------- */
@@ -2289,14 +2317,14 @@ function BurritoMeter({ eaten, max }) {
       </svg>
       <div className="sub num" style={{ textAlign: "center", marginTop: 4, color: over ? "#FF5FA2" : undefined }}>
         {over
-          ? `🌯 wrapper's empty — ${(eaten - max).toLocaleString()} cal past the pool. Noted, never judged`
+          ? `wrapper's empty — ${(eaten - max).toLocaleString()} cal past the pool. Noted, never judged`
           : gone
-          ? "🌯 polished off — the pool is exactly spent. Chef's kiss"
+          ? "polished off — the pool is exactly spent. Chef's kiss"
           : lastBites
-          ? `🌯 down to the last bites — ${left.toLocaleString()} cal still in the wrap`
+          ? `down to the last bites — ${left.toLocaleString()} cal still in the wrap`
           : bitten
-          ? `🌯 ${Math.round(100 - pct)}% of the burrito left · ${left.toLocaleString()} cal in the wrap`
-          : `🌯 the whole burrito awaits · ${left.toLocaleString()} cal pool`}
+          ? `${Math.round(100 - pct)}% of the burrito left · ${left.toLocaleString()} cal in the wrap`
+          : `the whole burrito awaits · ${left.toLocaleString()} cal pool`}
       </div>
     </div>
   );
@@ -2484,7 +2512,7 @@ function Streakhouse() {
       const n = q.has("steps") ? parseStepsText(q.get("steps")) : null;
       if (n != null && n > 0 && n < 200000) {
         saveSteps(String(n), "url");
-        flash(`👟 ${n.toLocaleString()} steps arrived via the Shortcut URL`);
+        flash(`${n.toLocaleString()} steps arrived via the Shortcut URL`);
       }
       if (q.has("steps")) window.history.replaceState({}, "", window.location.pathname);
     } catch {}
@@ -3024,7 +3052,7 @@ function Streakhouse() {
       const n = parseStepsText(txt);
       if (n == null) { flash("No step count found on the clipboard — run the Shortcut first"); return; }
       await saveSteps(String(n), "paste");
-      flash(`👟 ${n.toLocaleString()} steps imported from Health`);
+      flash(`${n.toLocaleString()} steps imported from Health`);
     } catch {
       flash("Couldn't read the clipboard — long-press the box and paste instead");
     }
@@ -3055,7 +3083,7 @@ function Streakhouse() {
 
   /* ---------- food estimate: local table -> custom foods -> cache -> USDA ----------
      Every parsed input gets its own line with the tool's estimate, editable before adding. */
-  const SOURCE_LABEL = { local: "built-in table", custom: "your food database", cache: "seen before", usda: "USDA lookup", off: "Open Food Facts", ai: "✨ Claude estimate" };
+  const SOURCE_LABEL = { local: "built-in table", custom: "your food database", cache: "seen before", usda: "USDA lookup", off: "Open Food Facts", ai: "Claude estimate" };
   const estimate = async () => {
     if (!desc.trim()) return;
     setEstimating(true); setEstimateNote(""); setEstimateItems(null);
@@ -3284,7 +3312,7 @@ function Streakhouse() {
     try {
       const items = await aiLookup(url, "1 banana");
       setAiNote(items.length
-        ? `✨ Working — Claude says a banana runs about ${items[0].cal} cal. New foods now go through it.`
+        ? `Working — Claude says a banana runs about ${items[0].cal} cal. New foods now go through it.`
         : "Saved, but the test came back empty — check the Worker code and its ANTHROPIC_API_KEY secret.");
     } catch (e) {
       setAiNote(`Saved, but the test failed (${e.message}). Check the Worker URL and that it's deployed.`);
@@ -3505,13 +3533,13 @@ function Streakhouse() {
   const togglePeriodToday = async () => {
     const next = periodSet.has(today) ? periods.filter((d) => d !== today) : [...periods, today].sort();
     setPeriods(next); await sset(K.cycle, next);
-    flash(periodSet.has(today) ? "Unmarked today" : "😒 The audacity. Marked — the weight trend will account for it.");
+    flash(periodSet.has(today) ? "Unmarked today" : "The audacity. Marked — the weight trend will account for it.");
   };
 
   /* ---------- voice dictation for the food field ---------- */
   const toggleDictation = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { flash("No dictation in this browser — the keyboard 🎤 works too"); return; }
+    if (!SR) { flash("No dictation in this browser — the keyboard mic works too"); return; }
     if (listening) { try { recRef.current && recRef.current.stop(); } catch {} return; }
     const rec = new SR();
     recRef.current = rec;
@@ -3663,7 +3691,7 @@ function Streakhouse() {
       </div>
       {!settings.aiUrl ? (
         <div className="sub">
-          Your Calorie Coworker needs the Cloudflare Worker — set it up once in the plan tab (✨ AI lookup → Save & test),
+          Your Calorie Coworker needs the Cloudflare Worker — set it up once in the plan tab (AI lookup → Save & test),
           then log food by talking it through here. It asks before it guesses.
         </div>
       ) : (
@@ -3778,7 +3806,7 @@ function Streakhouse() {
           </div>
           {nudge && (
             <div className="nudge">
-              <span>⏰ {nudge.msg}</span>
+              <span><MIcon k="clock" size={14} /> {nudge.msg}</span>
               <button onClick={() => (nudge.action === "Close the Day" ? startClose() : foodInputRef.current && foodInputRef.current.focus())}>{nudge.action}</button>
             </div>
           )}
@@ -3796,7 +3824,7 @@ function Streakhouse() {
           {pastDay ? (
             <React.Fragment>
             <div className="card" style={{ borderColor: "#7C48D8" }}>
-              <h2>🕰 Time machine · {shortDate(pastDay.date)}</h2>
+              <h2><span><MIcon k="watch" /> Time machine · {shortDate(pastDay.date)}</span></h2>
               <div className="sub">Editing a past day — today is parked until you come back. That day's totals and the weekly bank recalculate as you go. Tap today's square up top (or the button below) to return.</div>
               {pastDay.doc.entries.length === 0 && <div className="empty">Nothing logged that day.</div>}
               {pastDay.doc.entries.map((e) =>
@@ -3855,12 +3883,12 @@ function Streakhouse() {
 
           {settings.suppOn && suppList.length > 0 && (suppAllDone && !suppExpand ? (
             <button type="button" className="suppbar alldone" onClick={() => setSuppExpand(true)} aria-label="Supplements complete — tap to reopen the checklist">
-              <span className="supptitle">💊 Supplements ✓</span>
+              <span className="supptitle"><MIcon k="pill" size={13} /> Supplements ✓</span>
               <span className="suppjoke">{suppJoke}</span>
             </button>
           ) : (
             <div className={`suppbar ${suppAllDone ? "alldone" : ""}`} role="group" aria-label="Daily supplements checklist">
-              <div className="supptitle">💊 Tiny Rocks · {suppDoneCount}/{suppList.length} down the hatch</div>
+              <div className="supptitle"><MIcon k="pill" size={13} /> Tiny Rocks · {suppDoneCount}/{suppList.length} down the hatch</div>
               <div className="suppchips">
                 {suppList.map((s) => (
                   <button key={s} type="button" className={`suppchip ${suppDone[s] ? "on" : ""}`} aria-pressed={!!suppDone[s]} onClick={() => toggleSuppDone(s)}>
@@ -3889,10 +3917,10 @@ function Streakhouse() {
             )}
 
             {!poolDay && (
-              <div className="bank num">🏦 Banked for the weekend: {bank.toLocaleString()} cal{total > 0 && total < dailyBudget ? ` (includes ${dailyBudget - total} pending today)` : ""}</div>
+              <div className="bank num"><MIcon k="bank" size={13} /> Banked for the weekend: {bank.toLocaleString()} cal{total > 0 && total < dailyBudget ? ` (includes ${dailyBudget - total} pending today)` : ""}</div>
             )}
             {poolDay && bank > 0 && (
-              <div className="bank num">🏦 Your Mon–Thu banking added {bankEarned(today, history, settings, null, null).toLocaleString()} cal to this pool. Date night is pre-funded.</div>
+              <div className="bank num"><MIcon k="bank" size={13} /> Your Mon–Thu banking added {bankEarned(today, history, settings, null, null).toLocaleString()} cal to this pool. Date night is pre-funded.</div>
             )}
             {poolDay && bankQuip && (
               <div className="estnote" style={{ textAlign: "center", marginTop: 8 }}>{bankQuip.split("{level}").join(level)}</div>
@@ -3905,14 +3933,14 @@ function Streakhouse() {
                 <div className="pips" aria-label="Tap days to give them a heavier calorie budget">
                   {weekendPlan.rows.map((r) => (
                     <div key={r.ds} role="button" tabIndex={0} aria-pressed={r.heavy} className={`pip ${r.heavy ? "heavy" : ""}`} onClick={() => toggleHeavyDay(r.w)}>
-                      {r.heavy ? "🔥 " : ""}{r.name.slice(0, 3)}
+                      {r.heavy ? <React.Fragment><MIcon k="flame" size={11} />{" "}</React.Fragment> : ""}{r.name.slice(0, 3)}
                     </div>
                   ))}
                 </div>
                 <div style={{ marginTop: 6 }}>
                   {weekendPlan.rows.map((r) => (
                     <div className="xpline" key={r.ds}>
-                      <span>{r.name}{r.isToday ? " · today" : ""}{r.heavy ? " 🔥" : ""}</span>
+                      <span>{r.name}{r.isToday ? " · today" : ""}{r.heavy ? <React.Fragment>{" "}<MIcon k="flame" size={11} /></React.Fragment> : ""}</span>
                       <span className="num">
                         {(r.isPast || r.isToday) && (
                           <span style={{ color: r.actual > r.planned ? "#FF5FA2" : "#52B52E" }}>{r.actual.toLocaleString()} / </span>
@@ -3930,7 +3958,7 @@ function Streakhouse() {
               </React.Fragment>
             )}
 
-            <div className="qname" style={{ marginTop: 14 }}>🍽️ Fuel</div>
+            <div className="qname" style={{ marginTop: 14 }}><MIcon k="fork" size={14} /> Fuel</div>
             <div className="pips" aria-label="Meal windows — filled means you logged in that window; tap to log">
               <div role="button" tabIndex={0} className={`pip ${wins.morning ? "filled" : ""}`} onClick={() => foodInputRef.current && foodInputRef.current.focus()}>morning</div>
               <div role="button" tabIndex={0} className={`pip ${wins.midday ? "filled" : ""}`} onClick={() => foodInputRef.current && foodInputRef.current.focus()}>midday</div>
@@ -3941,7 +3969,7 @@ function Streakhouse() {
               <textarea ref={foodInputRef} rows={3} className="foodbox" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={foodPh} aria-label="Food description"
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitFood(); } }} />
               <button className={`micbtn ${listening ? "ember" : ""}`} aria-label={listening ? "Stop dictation" : "Dictate food description"} aria-pressed={listening} onClick={toggleDictation}>
-                {listening ? "◼" : "🎤"}
+                {listening ? "◼" : <MIcon k="mic" size={18} />}
               </button>
             </div>
             {listening && <div className="note">Listening… speak the meal, tap ◼ when done.</div>}
@@ -3989,7 +4017,7 @@ function Streakhouse() {
                 </div>
                 {settings.aiUrl && estimateItems.some((x) => x.cal === "") && (
                   <div className="row">
-                    <button className="ember" style={{ width: "100%" }} onClick={() => chatHandoff(desc)}>💬 Ask the chat below instead</button>
+                    <button className="ember" style={{ width: "100%" }} onClick={() => chatHandoff(desc)}><MIcon k="chat" size={13} /> Ask the chat below instead</button>
                   </div>
                 )}
               </div>
@@ -3997,10 +4025,10 @@ function Streakhouse() {
 
             <div className="row">
               <button style={{ flex: 1 }} disabled={labelBusy} onClick={() => labelRef.current && labelRef.current.click()}>
-                {labelBusy ? "reading the fine print…" : "📷 Scan a label"}
+                {labelBusy ? "reading the fine print…" : <React.Fragment><MIcon k="camera" size={13} /> Scan a label</React.Fragment>}
               </button>
               <button style={{ flex: 1 }} disabled={receiptBusy} onClick={() => receiptRef.current && receiptRef.current.click()}>
-                {receiptBusy ? "reading the receipt…" : "🧾 Scan a receipt"}
+                {receiptBusy ? "reading the receipt…" : <React.Fragment><MIcon k="receipt" size={13} /> Scan a receipt</React.Fragment>}
               </button>
               <button style={{ flex: 1 }} onClick={() => { setLabelForm({ name: "", cal: "", p: "", f: "", g: "", liquid: false, logToday: true, saveDb: true }); setLabelNote(""); }}>＋ New food</button>
               <input ref={labelRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { scanLabel(e.target.files && e.target.files[0]); e.target.value = ""; }} />
@@ -4261,7 +4289,7 @@ function Streakhouse() {
   const vitalsContent = (
     <React.Fragment>
           <div className="card">
-            <h2>👟 Touch Grass</h2>
+            <h2><span><MIcon k="shoe" /> Touch Grass</span></h2>
             <div className="bignum num">{day.steps.toLocaleString()}</div>
             <div className="sub num">of {settings.stepGoal.toLocaleString()} · {stepPct}%</div>
             {day.sm ? (
@@ -4276,7 +4304,7 @@ function Streakhouse() {
               <button className="pri" onClick={() => saveSteps()} disabled={!stepInput}>Save</button>
             </div>
             <div className="row">
-              <button style={{ flex: 1 }} onClick={importClipboardSteps}>📲 Paste from Health Shortcut</button>
+              <button style={{ flex: 1 }} onClick={importClipboardSteps}><MIcon k="send" size={13} /> Paste from Health Shortcut</button>
               <button onClick={() => setShowHealthHelp(!showHealthHelp)}>{showHealthHelp ? "Hide setup" : "Link Health"}</button>
             </div>
             {showHealthHelp && (
@@ -4312,7 +4340,7 @@ function Streakhouse() {
           </div>
 
           <div className="card">
-            <h2>⚖️ Gravity Check</h2>
+            <h2><span><MIcon k="scale" /> Gravity Check</span></h2>
             <div className="bignum num">{lastWeigh ? lastWeigh.w : "—"}</div>
             <div className="sub num">{lastWeigh ? `last logged ${shortDate(lastWeigh.d)}` : "no weigh-ins yet"}</div>
             <div className="row">
@@ -4323,11 +4351,11 @@ function Streakhouse() {
           </div>
 
           <div className="card">
-            <h2>🩸 The Monthly Subscription</h2>
+            <h2><span><MIcon k="drop" /> The Monthly Subscription</span></h2>
             <div className="sub">Mark period days and the weight trend accounts for them: marked weigh-ins show in pink on the chart and the pace projection skips them, so water-weight days don't read as setbacks.</div>
             <div className="row">
               <button className={periodSet.has(today) ? "ember" : ""} style={{ width: "100%" }} onClick={togglePeriodToday}>
-                {periodSet.has(today) ? "🔴 Marked — tap to unmark today" : "🔴 Mark today as a period day"}
+                {periodSet.has(today) ? <React.Fragment><MIcon k="drop" size={12} /> Marked — tap to unmark today</React.Fragment> : <React.Fragment><MIcon k="drop" size={12} /> Mark today as a period day</React.Fragment>}
               </button>
             </div>
             {periods.length > 0 && (
@@ -4373,12 +4401,12 @@ function Streakhouse() {
               <div className="empty" style={{ marginTop: 10 }}>Two or more weigh-ins and the trend line appears. Weekly is plenty — daily noise is mostly water.</div>
             )}
             {weightChart.some((w) => periodSet.has(w.ds)) && (
-              <div className="sub" style={{ marginTop: 6 }}>🔴 Pink dots are period-day weigh-ins — expected to run high; the pace math skips them.</div>
+              <div className="sub" style={{ marginTop: 6 }}><MIcon k="drop" size={11} /> Pink dots are period-day weigh-ins — expected to run high; the pace math skips them.</div>
             )}
           </div>
 
           <div className="card">
-            <h2>Weekly report card {level < 2 && "🔒"}</h2>
+            <h2>Weekly report card {level < 2 && <MIcon k="lock" size={13} />}</h2>
             {level >= 2 ? (
               <React.Fragment>
                 <div className="xpline"><span>Avg daily calories</span><span className="num">{weekReport.thisWeek.cal} <span style={{ color: "#5C5254" }}>(last wk {weekReport.lastWeek.cal})</span></span></div>
@@ -4392,7 +4420,7 @@ function Streakhouse() {
           </div>
 
           <div className="card">
-            <h2>Pace projection {level < 3 && "🔒"}</h2>
+            <h2>Pace projection {level < 3 && <MIcon k="lock" size={13} />}</h2>
             {level >= 3 ? (
               pace ? (
                 <React.Fragment>
@@ -4410,7 +4438,7 @@ function Streakhouse() {
           </div>
 
           <div className="card">
-            <h2>Calories vs weight · 28 days {level < 4 && "🔒"}</h2>
+            <h2>Calories vs weight · 28 days {level < 4 && <MIcon k="lock" size={13} />}</h2>
             {level >= 4 ? (
               <div style={{ height: 200 }}>
                 <ResponsiveContainer width="100%" height="100%">
@@ -4549,16 +4577,16 @@ function Streakhouse() {
             <div className="pips" aria-label="Tap days to give them a heavier share of the weekend pool">
               {[{ w: 5, n: "Fri" }, { w: 6, n: "Sat" }, { w: 0, n: "Sun" }].map((d) => (
                 <div key={d.w} role="button" tabIndex={0} aria-pressed={heavyDays.includes(d.w)} className={`pip ${heavyDays.includes(d.w) ? "heavy" : ""}`} onClick={() => toggleHeavyDay(d.w)}>
-                  {heavyDays.includes(d.w) ? "🔥 " : ""}{d.n}
+                  {heavyDays.includes(d.w) ? <React.Fragment><MIcon k="flame" size={11} />{" "}</React.Fragment> : ""}{d.n}
                 </div>
               ))}
             </div>
             <div className="row"><button className="pri" style={{ width: "100%" }} onClick={async () => { const s = await saveSettings(); flash(`Saved. Mon–Thu ${weekdayTarget(s)} cal · weekend pool ${poolBase(s).toLocaleString()}+bank`); }}>Save goals</button></div>
-            <div className="sub" style={{ marginTop: 10 }}>Mon–Thu surplus still banks into the weekend pool on top of any shift. Every 7 perfect days earns a 🛡 Rest Day token (max 3) that auto-shields a miss.</div>
+            <div className="sub" style={{ marginTop: 10 }}>Mon–Thu surplus still banks into the weekend pool on top of any shift. Every 7 perfect days earns a <MIcon k="shield" size={12} /> Rest Day token (max 3) that auto-shields a miss.</div>
           </div>
 
           <div className="card">
-            <h2>🥬 Fiber freebies</h2>
+            <h2><span><FreebieLeaf size={15} /> Fiber freebies</span></h2>
             <div className="sub">
               Tagged raw vegetables can log at 0 calories. The call is made at the moment of logging — flipping these later never
               rewrites entries already on the books. Protein and fiber always log at real values, and cooked versions never qualify.
@@ -4609,7 +4637,7 @@ function Streakhouse() {
           </div>
 
           <div className="card">
-            <h2>💊 Tiny Rocks</h2>
+            <h2><span><MIcon k="pill" /> Tiny Rocks</span></h2>
             <div className="sub">List your daily supplements and a reminder banner appears at the top of the eats page — tap each one off as you take it. Resets every morning.</div>
             <div className="row" style={{ marginTop: 8 }}>
               <button className={settings.suppOn ? "pri" : ""} style={{ flex: 1 }} aria-pressed={!!settings.suppOn} onClick={toggleSuppOn} disabled={!suppList.length && !settings.suppOn}>
@@ -4634,7 +4662,7 @@ function Streakhouse() {
           </div>
 
           <div className="card">
-            <h2>✨ AI lookup</h2>
+            <h2><span><MIcon k="spark" /> AI lookup</span></h2>
             <div className="sub">
               Optional upgrade: route unfamiliar foods through Claude instead of the USDA / Open Food Facts databases.
               It reads casual descriptions the way a person would — mixed dishes, fractions, "a splash of" — and your
@@ -4648,12 +4676,12 @@ function Streakhouse() {
               <button className="pri" style={{ flex: 1 }} onClick={saveAiUrl}>{aiDraft.trim() ? "Save & test" : settings.aiUrl ? "Turn off" : "Save"}</button>
             </div>
             {(aiNote || settings.aiUrl) && (
-              <div className="sub" style={{ marginTop: 8 }}>{aiNote || "✨ On — new foods are estimated by Claude and cached, so each phrase only ever costs one call."}</div>
+              <div className="sub" style={{ marginTop: 8 }}>{aiNote || "On — new foods are estimated by Claude and cached, so each phrase only ever costs one call."}</div>
             )}
           </div>
 
           <div className="card">
-            <h2>🔄 Sync</h2>
+            <h2><span><MIcon k="syncy" /> Sync</span></h2>
             {!syncInfo ? (
               <React.Fragment>
                 <div className="sub">
@@ -4675,7 +4703,7 @@ function Streakhouse() {
             ) : (
               <React.Fragment>
                 <div className="sub">
-                  🟢 On — {syncInfo.last ? `last synced ${new Date(syncInfo.last).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "not synced yet"}.
+                  <MIcon k="dotgreen" size={11} /> On — {syncInfo.last ? `last synced ${new Date(syncInfo.last).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "not synced yet"}.
                   Changes push a few seconds after you make them and pull when you come back to the app. Photos stay per-device.
                 </div>
                 <div className="qdesc" style={{ marginTop: 10 }}>Sync code for your other devices:</div>
@@ -4898,7 +4926,7 @@ function Streakhouse() {
             <div className="l">7-day score</div>
           </div>
           <div className="stat">
-            <div className="n num" style={{ color: streak > 0 ? "#FF5FA2" : "#CDBFA6" }}>{streak > 0 ? `🔥${streak}` : "0"}</div>
+            <div className="n num" style={{ color: streak > 0 ? "#FF5FA2" : "#CDBFA6" }}>{streak > 0 ? <React.Fragment><MIcon k="flame" size={12} />{streak}</React.Fragment> : "0"}</div>
             <div className="l">streak · best {profile.bestStreak || 0}</div>
           </div>
         </div>
@@ -4908,7 +4936,7 @@ function Streakhouse() {
         <div className="lvlpill">LVL {level}</div>
         <div className="lvltrack"><div style={{ width: `${levelPct}%` }} /></div>
         <div className="lvlxp num">{profile.xp}/{nextXp} XP</div>
-        <div className="tokens" title="Rest Day tokens auto-shield a missed day">{"🛡".repeat(profile.tokens || 0)}</div>
+        <div className="tokens" title="Rest Day tokens auto-shield a missed day">{Array.from({ length: profile.tokens || 0 }, (_, i) => <MIcon key={i} k="shield" size={14} />)}</div>
       </div>
 
       {!wide && (
@@ -5061,7 +5089,7 @@ function Streakhouse() {
                   ))}
                   <div className="xpline" style={{ borderBottom: "none" }}><span style={{ fontWeight: 800 }}>Total</span><span className="v num" style={{ fontWeight: 800 }}>+{closeFlow.reveal.xp} XP</span></div>
                 </div>
-                {closeFlow.reveal.tokenEarned && <div className="note" style={{ color: "#52B52E" }}>🛡 Rest Day token earned — 7 perfect days banked one automatic shield.</div>}
+                {closeFlow.reveal.tokenEarned && <div className="note" style={{ color: "#52B52E" }}><MIcon k="shield" size={12} /> Rest Day token earned — 7 perfect days banked one automatic shield.</div>}
                 {closeFlow.reveal.levelUp && <div className="note" style={{ color: "#7C48D8" }}>LEVEL {closeFlow.reveal.levelUp} — new analytics unlocked in Trends.</div>}
                 <div className="evidence">{closeFlow.reveal.evidence}</div>
                 {closeFlow.reveal.closer && <div className="sub" style={{ textAlign: "center", marginTop: 10 }}>{closeFlow.reveal.closer}</div>}

@@ -117,14 +117,14 @@ const FOOD_REACTIONS = [
     "Life includes cookies. Budgets exist precisely so it can.",
   ]},
   { match: (c) => c.fib >= 6 || /salad|broccoli|veggie|vegetable|greens|spinach|kale|edamame|beans|hummus/.test(c.names), lines: [
-    "🥦 The Roughage Report will be thrilled.",
+    "The Roughage Report will be thrilled.",
     "Fiber logged. Your gut's legal team sends their regards.",
     "Greens on the docket. The vegetable lobby is very pleased.",
     "Vegetables, entered willingly. Not even under oath.",
     "The colon files a formal thank-you note.",
   ]},
   { match: (c) => c.prot >= 25, lines: [
-    "💪 That's a protein deposition if I've ever seen one.",
+    "That's a protein deposition if I've ever seen one.",
     "The muscles have retained counsel, and counsel eats well.",
     "Protein secured. Future you just got measurably stronger on paper.",
     "A power move, in grams.",
