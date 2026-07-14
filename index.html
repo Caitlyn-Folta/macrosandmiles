@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v43";
+const APP_VERSION = "mm-v44";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -2249,6 +2249,9 @@ function Streakhouse() {
   const [editEntry, setEditEntry] = useState(null);
   const [suppDraft, setSuppDraft] = useState("");
   const [suppExpand, setSuppExpand] = useState(false);
+  const [pastDay, setPastDayState] = useState(null); /* {date, doc} — time machine */
+  const [pastEdit, setPastEdit] = useState(null);
+  const [pastAdd, setPastAdd] = useState({ name: "", cal: "", p: "", f: "" });
   const [retroFrom, setRetroFrom] = useState("");
   const [retroTo, setRetroTo] = useState("");
   const [retroPreview, setRetroPreview] = useState(null);
@@ -2811,6 +2814,60 @@ function Streakhouse() {
   };
 
   const removeEntry = async (id) => commitDay(Object.assign({}, day, { entries: day.entries.filter((e) => e.id !== id), del: [...(day.del || []), id] }));
+
+  /* ---------- time machine: tap a chain day to edit a past day's log.
+     Entries carry m stamps and deletes leave tombstones, so past-day edits
+     sync across devices like today's; history (and thus the weekly bank)
+     recalculates from the amended day. ---------- */
+  const openPastDay = async (ds) => {
+    if (ds === today) { flash("That's today — it's already open below."); return; }
+    const doc = (await sget(K.day(ds))) || emptyDay(ds);
+    setPastDayState({ date: ds, doc });
+    setPastEdit(null); setPastAdd({ name: "", cal: "", p: "", f: "" });
+  };
+  const commitPastDay = async (doc) => {
+    await sset(K.day(doc.date), doc);
+    setPastDayState({ date: doc.date, doc });
+    setHistory((prev) => {
+      const rec = Object.assign({}, prev[doc.date] || {}, {
+        c: totalCal(doc), e: doc.entries.length, p: totalProt(doc), f: totalFib(doc),
+        s: doc.steps != null ? doc.steps : (prev[doc.date] || {}).s || 0,
+      });
+      const merged = Object.assign({}, prev, { [doc.date]: rec });
+      sset(K.history, merged);
+      return merged;
+    });
+  };
+  const pastAddEntry = async () => {
+    const cal = parseInt(pastAdd.cal, 10);
+    if (!pastAdd.name.trim() || isNaN(cal)) return;
+    const e = {
+      id: nextEntryId(), name: pastAdd.name.trim(), cal: Math.max(0, cal),
+      p: Math.max(0, parseInt(pastAdd.p, 10) || 0), f: Math.max(0, parseInt(pastAdd.f, 10) || 0),
+      hour: 12, m: Date.now(),
+    };
+    await commitPastDay(Object.assign({}, pastDay.doc, { entries: [...pastDay.doc.entries, e] }));
+    setPastAdd({ name: "", cal: "", p: "", f: "" });
+  };
+  const pastSaveEdit = async () => {
+    const cal = parseInt(pastEdit.cal, 10);
+    if (!pastEdit.name.trim() || isNaN(cal)) return;
+    await commitPastDay(Object.assign({}, pastDay.doc, {
+      entries: pastDay.doc.entries.map((e) => (e.id === pastEdit.id
+        ? Object.assign({}, e, {
+            name: pastEdit.name.trim(), cal: Math.max(0, cal),
+            p: Math.max(0, parseInt(pastEdit.p, 10) || 0), f: Math.max(0, parseInt(pastEdit.f, 10) || 0),
+            m: Date.now(),
+          })
+        : e)),
+    }));
+    setPastEdit(null);
+  };
+  const pastDelete = async (id) =>
+    commitPastDay(Object.assign({}, pastDay.doc, {
+      entries: pastDay.doc.entries.filter((e) => e.id !== id),
+      del: [...(pastDay.doc.del || []), id],
+    }));
   /* scale an in-flight edit relative to the values the entry had when the edit
      box opened, so repeated taps pick a portion rather than compounding */
   const scaleEdit = (frac, label, pin = "") => setEditEntry(Object.assign({}, editEntry, {
@@ -3562,11 +3619,72 @@ function Streakhouse() {
               <button onClick={() => (nudge.action === "Close the Day" ? startClose() : foodInputRef.current && foodInputRef.current.focus())}>{nudge.action}</button>
             </div>
           )}
-          <div className="chain" aria-label="Last 14 days">
+          <div className="chain" aria-label="Last 14 days — tap a day to view or edit it">
             {chain.map((d) => (
-              <div key={d.ds} className={`link ${d.shield ? "shield" : d.ok ? "ok" : ""} ${d.logged ? "logged" : ""} ${d.isToday ? "today" : ""}`} title={d.ds + (d.shield ? " (shielded)" : "")} />
+              <div key={d.ds} role="button" tabIndex={0}
+                className={`link ${d.shield ? "shield" : d.ok ? "ok" : ""} ${d.logged ? "logged" : ""} ${d.isToday ? "today" : ""}`}
+                title={d.ds + (d.shield ? " (shielded)" : "") + " — tap to edit"}
+                aria-label={`Open ${d.ds}`}
+                onClick={() => openPastDay(d.ds)}
+                onKeyDown={(e) => e.key === "Enter" && openPastDay(d.ds)} />
             ))}
           </div>
+
+          {pastDay && (
+            <div className="card" style={{ borderColor: "#7C48D8" }}>
+              <h2>🕰 Time machine · {shortDate(pastDay.date)}</h2>
+              <div className="sub">Editing a past day. That day's totals — and the weekly bank — recalculate as you go. The ledger accepts amendments.</div>
+              {pastDay.doc.entries.length === 0 && <div className="empty">Nothing logged that day.</div>}
+              {pastDay.doc.entries.map((e) =>
+                pastEdit && pastEdit.id === e.id ? (
+                  <div className="estitem" key={e.id}>
+                    <div className="row" style={{ marginTop: 0 }}>
+                      <input value={pastEdit.name} onChange={(ev) => setPastEdit(Object.assign({}, pastEdit, { name: ev.target.value }))} aria-label="Edit past food name" />
+                    </div>
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <input inputMode="numeric" value={pastEdit.cal} onChange={(ev) => setPastEdit(Object.assign({}, pastEdit, { cal: ev.target.value }))} placeholder="cal" aria-label="Edit past calories" />
+                      <input inputMode="numeric" value={pastEdit.p} onChange={(ev) => setPastEdit(Object.assign({}, pastEdit, { p: ev.target.value }))} placeholder="prot g" aria-label="Edit past protein" />
+                      <input inputMode="numeric" value={pastEdit.f} onChange={(ev) => setPastEdit(Object.assign({}, pastEdit, { f: ev.target.value }))} placeholder="fiber g" aria-label="Edit past fiber" />
+                    </div>
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <button className="pri" style={{ flex: 1 }} onClick={pastSaveEdit} disabled={!pastEdit.name.trim() || isNaN(parseInt(pastEdit.cal, 10))}>Save</button>
+                      <button onClick={() => setPastEdit(null)}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="entry" key={e.id}>
+                    <span className="nm">
+                      {e.name}
+                      {e.freebieApplied && <FreebieLeaf size={13} real={e.ocal} />}
+                      {(e.p || e.f) ? <span className="entrymacros num"><ProteinIcon size={11} />{e.p || 0} <FiberIcon size={11} />{e.f || 0}</span> : null}
+                    </span>
+                    <span className="actions">
+                      <span className="cal num">{e.cal}</span>
+                      <button className="tinybtn" title="Edit" aria-label={`Edit past ${e.name}`} onClick={() => setPastEdit({ id: e.id, name: e.name, cal: String(e.cal), p: String(e.p || 0), f: String(e.f || 0) })}>✎</button>
+                      <button className="tinybtn" title="Delete" aria-label={`Delete past ${e.name}`} onClick={() => pastDelete(e.id)}>✕</button>
+                    </span>
+                  </div>
+                )
+              )}
+              <div className="xpline" style={{ marginTop: 8 }}>
+                <span><b>Day total</b></span>
+                <span className="num">{totalCal(pastDay.doc)} cal · {totalProt(pastDay.doc)}g prot · {totalFib(pastDay.doc)}g fiber</span>
+              </div>
+              <div className="qname" style={{ marginTop: 12 }}>Add to this day</div>
+              <div className="row" style={{ marginTop: 6 }}>
+                <input value={pastAdd.name} onChange={(e) => setPastAdd(Object.assign({}, pastAdd, { name: e.target.value }))} placeholder="what was it?" aria-label="Past day food name" />
+              </div>
+              <div className="row" style={{ marginTop: 6 }}>
+                <input inputMode="numeric" value={pastAdd.cal} onChange={(e) => setPastAdd(Object.assign({}, pastAdd, { cal: e.target.value }))} placeholder="cal" aria-label="Past day calories" />
+                <input inputMode="numeric" value={pastAdd.p} onChange={(e) => setPastAdd(Object.assign({}, pastAdd, { p: e.target.value }))} placeholder="prot g" aria-label="Past day protein" />
+                <input inputMode="numeric" value={pastAdd.f} onChange={(e) => setPastAdd(Object.assign({}, pastAdd, { f: e.target.value }))} placeholder="fiber g" aria-label="Past day fiber" />
+                <button className="pri" onClick={pastAddEntry} disabled={!pastAdd.name.trim() || isNaN(parseInt(pastAdd.cal, 10))}>Add</button>
+              </div>
+              <div className="row" style={{ marginTop: 8 }}>
+                <button style={{ width: "100%" }} onClick={() => setPastDayState(null)}>Close the time machine</button>
+              </div>
+            </div>
+          )}
 
           {settings.suppOn && suppList.length > 0 && (suppAllDone && !suppExpand ? (
             <button type="button" className="suppbar alldone" onClick={() => setSuppExpand(true)} aria-label="Supplements complete — tap to reopen the checklist">
@@ -4494,7 +4612,8 @@ function Streakhouse() {
         .peptalk .pt-label { font-size:10px; font-weight:800; letter-spacing:2px; text-transform:uppercase; color:#7C48D8; }
         .peptalk .pt-line { font-size:15px; font-weight:800; margin-top:4px; line-height:1.35; }
         .chain { display:flex; gap:0; align-items:center; margin:0 0 16px; }
-        .link { flex:1; height:13px; border-radius:7px; background:#fff; border:2px solid #EBDFC9; margin-right:3px; }
+        .link { flex:1; height:13px; border-radius:7px; background:#fff; border:2px solid #EBDFC9; margin-right:3px; cursor:pointer; }
+        .link:hover { border-color:#1E1A1C; }
         .link.ok { background:#FF5FA2; border-color:#1E1A1C; }
         .link.shield { background:#7ED957; border-color:#1E1A1C; }
         .link.logged:not(.ok):not(.shield) { background:#EBDFC9; border-color:#D9CBAF; }
