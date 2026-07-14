@@ -418,3 +418,29 @@ function pickLine(category, { storage = window.localStorage, date = new Date(), 
     return chosen;
   } catch { return null; }
 }
+
+/* ---------- supplements-complete one-liners ----------
+   Shown on the compact banner once every tiny rock is down the hatch.
+   Rotates deterministically by date so it holds still all day. */
+const SUPP_DONE_LINES = [
+  "Your organs filed a thank-you note.",
+  "Congratulations on your commitment to expensive urine.",
+  "Micronutrients have entered the chat.",
+  "Today's vitamin deficiency has been politely ignored.",
+  "Your future self is cautiously optimistic.",
+  "Body maintenance complete.",
+  "Today's wellness theater is complete.",
+  "You're suspiciously responsible.",
+  "Look at you, making good decisions.",
+  "Tiny pills. Big aspirations.",
+  "You've successfully consumed hope in capsule form.",
+  "Your pharmacist would absolutely approve.",
+  "One less thing for tomorrow-you to forget.",
+  "Your cells have been notified.",
+  "The placebo effect applauds your consistency.",
+  "Keeping Big Supplement in business.",
+  "Certified Adult™.",
+  "You've earned absolutely no immediate gratification.",
+  "Health: incrementally improved.",
+  "See you again tomorrow, same tiny pills.",
+];
