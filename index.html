@@ -168,7 +168,7 @@ const hashStr = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) 
 const totalCal = (day) => day.entries.reduce((a, e) => a + e.cal, 0);
 const totalProt = (day) => day.entries.reduce((a, e) => a + (e.p || 0), 0);
 const totalFib = (day) => day.entries.reduce((a, e) => a + (e.f || 0), 0);
-const emptyDay = (date) => ({ date, entries: [], steps: 0, closed: false, mq: {}, xp: 0 });
+const emptyDay = (date) => ({ date, entries: [], steps: 0, closed: false, mq: {}, supp: {}, xp: 0 });
 
 const sget = async (k) => { try { const r = await window.storage.get(k); return r ? JSON.parse(r.value) : null; } catch { return null; } };
 const sset = async (k, v) => { try { await window.storage.set(k, JSON.stringify(v)); syncTouch(k); return true; } catch (e) { console.error("storage", e); return false; } };
@@ -629,6 +629,9 @@ function mergeDayRaw(aRaw, bRaw) {
   ].filter((e) => !delSet.has(e.id));
   const mq = {};
   for (const q of new Set([...Object.keys(a.mq || {}), ...Object.keys(b.mq || {})])) mq[q] = !!((a.mq || {})[q] || (b.mq || {})[q]);
+  /* supplements check-offs OR together like quests: a check on either device sticks */
+  const supp = {};
+  for (const q of new Set([...Object.keys(a.supp || {}), ...Object.keys(b.supp || {})])) supp[q] = !!((a.supp || {})[q] || (b.supp || {})[q]);
   const out = Object.assign({}, b, a, { /* local scalars win; unions below */
     entries,
     del,
@@ -642,6 +645,7 @@ function mergeDayRaw(aRaw, bRaw) {
     closed: !!(a.closed || b.closed),
     mq,
   });
+  if (a.supp || b.supp) out.supp = supp;
   return JSON.stringify(out);
 }
 function mergeArrayUnion(aRaw, bRaw) {
@@ -2197,6 +2201,7 @@ function Streakhouse() {
   const [listening, setListening] = useState(false);
   const recRef = useRef(null);
   const [editEntry, setEditEntry] = useState(null);
+  const [suppDraft, setSuppDraft] = useState("");
   const [customFoods, setCustomFoods] = useState(customLoad);
   const [labelBusy, setLabelBusy] = useState(false);
   const [receiptBusy, setReceiptBusy] = useState(false);
@@ -2411,6 +2416,25 @@ function Streakhouse() {
     const next = Object.assign({}, settings, { heavyDays: heavyDays.includes(w) ? heavyDays.filter((x) => x !== w) : [...heavyDays, w] });
     setSettings(next); await sset(K.settings, next);
   };
+
+  /* ---------- supplements: daily reminder banner + check-off ---------- */
+  const suppList = settings.supplements || [];
+  const suppDone = day.supp || {};
+  const suppDoneCount = suppList.filter((s) => suppDone[s]).length;
+  const saveSuppSettings = async (next) => { setSettings(next); await sset(K.settings, next); };
+  const toggleSuppOn = () => saveSuppSettings(Object.assign({}, settings, { suppOn: !settings.suppOn }));
+  const addSupplement = () => {
+    const name = suppDraft.trim().toLowerCase();
+    if (!name || suppList.includes(name)) { setSuppDraft(""); return; }
+    /* adding the first one turns the reminder on — that's clearly the intent */
+    saveSuppSettings(Object.assign({}, settings, { supplements: [...suppList, name], suppOn: true }));
+    setSuppDraft("");
+  };
+  const removeSupplement = (name) =>
+    saveSuppSettings(Object.assign({}, settings, { supplements: suppList.filter((s) => s !== name) }));
+  /* allowed even on a closed day — evening supplements don't care about the gavel */
+  const toggleSuppDone = async (name) =>
+    commitDay(Object.assign({}, day, { supp: Object.assign({}, suppDone, { [name]: !suppDone[name] }) }));
   const todayQualifies = day.entries.length > 0 && onPlanNow && day.steps >= settings.stepGoal;
 
   const dayQual = useCallback((ds) => {
@@ -3371,6 +3395,23 @@ function Streakhouse() {
             ))}
           </div>
 
+          {settings.suppOn && suppList.length > 0 && (
+            <div className={`suppbar ${suppDoneCount === suppList.length ? "alldone" : ""}`} role="group" aria-label="Daily supplements checklist">
+              <div className="supptitle">
+                💊 {suppDoneCount === suppList.length
+                  ? "Supplements: all accounted for. Your cells send their regards."
+                  : `Supplements · ${suppDoneCount}/${suppList.length} down the hatch`}
+              </div>
+              <div className="suppchips">
+                {suppList.map((s) => (
+                  <button key={s} type="button" className={`suppchip ${suppDone[s] ? "on" : ""}`} aria-pressed={!!suppDone[s]} onClick={() => toggleSuppDone(s)}>
+                    {suppDone[s] ? "✓ " : ""}{s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="card">
             <h2>{poolDay ? <React.Fragment>Weekend pool <span style={{ color: "#7C48D8" }}>FRI–SUN</span></React.Fragment> : "Today's budget"}</h2>
             <div className="bignum num" style={{ color: remaining < 0 ? "#FF5FA2" : "#1E1A1C" }}>
@@ -4075,6 +4116,31 @@ function Streakhouse() {
           </div>
 
           <div className="card">
+            <h2>💊 Supplements</h2>
+            <div className="sub">List your daily supplements and a reminder banner appears at the top of the eats page — tap each one off as you take it. Resets every morning.</div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button className={settings.suppOn ? "pri" : ""} style={{ flex: 1 }} aria-pressed={!!settings.suppOn} onClick={toggleSuppOn} disabled={!suppList.length && !settings.suppOn}>
+                {settings.suppOn ? "Reminder on — tap to pause" : suppList.length ? "Turn the reminder on" : "Add a supplement below to start"}
+              </button>
+            </div>
+            {suppList.length > 0 && (
+              <div className="suppchips" style={{ marginTop: 10 }}>
+                {suppList.map((s) => (
+                  <span key={s} className="suppmanage">
+                    {s}
+                    <button className="tinybtn" title="Remove" aria-label={`Remove supplement ${s}`} onClick={() => removeSupplement(s)}>✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="row" style={{ marginTop: 8 }}>
+              <input value={suppDraft} onChange={(e) => setSuppDraft(e.target.value)} placeholder="creatine, vitamin D, fish oil…" aria-label="New supplement name" onKeyDown={(e) => e.key === "Enter" && addSupplement()} />
+              <button className="pri" onClick={addSupplement} disabled={!suppDraft.trim()}>Add</button>
+            </div>
+            <div className="sub" style={{ marginTop: 8 }}>Check-offs sync across devices; the list lives in settings like your goals.</div>
+          </div>
+
+          <div className="card">
             <h2>✨ AI lookup</h2>
             <div className="sub">
               Optional upgrade: route unfamiliar foods through Claude instead of the USDA / Open Food Facts databases.
@@ -4231,6 +4297,14 @@ function Streakhouse() {
         button.portionchip { background:#FFFDF8; border:2px solid #1E1A1C; border-radius:999px; padding:4px 10px; font-weight:800; font-size:12px; color:#1E1A1C; cursor:pointer; font-family:'Space Mono',monospace; box-shadow:1.5px 1.5px 0 #1E1A1C; }
         button.portionchip.on { background:#7ED957; }
         button.portionchip:active { transform:translate(1.5px,1.5px); box-shadow:0 0 0 #1E1A1C; }
+        .suppbar { background:#EDE3FF; border:2.5px solid #1E1A1C; border-radius:14px; padding:10px 12px; margin-bottom:12px; box-shadow:2.5px 2.5px 0 #1E1A1C; }
+        .suppbar.alldone { background:#E7F7DC; }
+        .supptitle { font-weight:800; font-size:13px; }
+        .suppchips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; align-items:center; }
+        button.suppchip { background:#FFFDF8; border:2px solid #1E1A1C; border-radius:999px; padding:5px 12px; font-weight:700; font-size:12px; color:#1E1A1C; cursor:pointer; box-shadow:1.5px 1.5px 0 #1E1A1C; }
+        button.suppchip.on { background:#7ED957; text-decoration:line-through; }
+        button.suppchip:active { transform:translate(1.5px,1.5px); box-shadow:0 0 0 #1E1A1C; }
+        .suppmanage { display:inline-flex; align-items:center; gap:4px; background:#FFFDF8; border:2px solid #1E1A1C; border-radius:999px; padding:3px 6px 3px 12px; font-weight:700; font-size:12px; }
         button.cathdr.mealhdr.on { background:#9B6DF2; }
         button.cathdr:active { transform:translate(2px,2px); box-shadow:0 0 0 #1E1A1C; }
         .pours { display:grid; grid-template-columns:repeat(3,1fr); gap:12px 10px; margin-top:12px; }
