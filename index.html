@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v46";
+const APP_VERSION = "mm-v47";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -1402,38 +1402,38 @@ const STAPLE_CATS = [
     id: "proteins", label: "Protein",
     /* grouped by type: cheeses up top, then meats, then the rest */
     items: [
-      { id: "cottage", name: "lowfat cottage cheese", label: "Cottage ch.", cal: 90, p: 14, f: 0 },
-      { id: "cheese", name: "lowfat cheese", label: "Cheese", cal: 70, p: 8, f: 0 },
-      { id: "babybel", name: "babybel light", label: "Babybel", cal: 50, p: 6, f: 0 },
-      { id: "parm", name: "parmesan", label: "Parm", cal: 45, p: 4, f: 0 },
-      { id: "feta", name: "feta", label: "Feta", cal: 75, p: 4, f: 0 },
-      { id: "chickenthigh", name: "chicken thigh", label: "Chix thigh", cal: 150, p: 21, f: 0 },
-      { id: "chickenbreast", name: "chicken breast", label: "Chix breast", cal: 185, p: 35, f: 0 },
-      { id: "leanbeef", name: "94% lean beef", label: "Lean beef", cal: 180, p: 26, f: 0 },
-      { id: "bacon", name: "bacon slice", label: "Bacon", cal: 35, p: 3, f: 0 },
-      { id: "pork", name: "pork tenderloin", label: "Pork tender.", cal: 135, p: 26, f: 0 },
-      { id: "turkeyslice", name: "deli turkey slice", label: "Deli turkey", cal: 30, p: 5, f: 0 },
-      { id: "salami", name: "salami slice", label: "Salami", cal: 40, p: 2, f: 0 },
-      { id: "chomps", name: "chomps stick", label: "Chomps", cal: 100, p: 10, f: 0 },
-      { id: "egg", name: "egg", label: "Egg", cal: 75, p: 6, f: 0 },
-      { id: "milk", name: "fairlife lowfat milk", label: "Milk", cal: 110, p: 13, f: 0 },
-      { id: "yogurt", name: "lowfat greek yogurt", label: "Greek yog.", cal: 150, p: 20, f: 0 },
-      { id: "proteinpowder", name: "protein powder scoop", label: "Protein scoop", cal: 110, p: 20, f: 0 },
-      { id: "builtbar", name: "built puff chocolate chunk bar", label: "Built puff", cal: 130, p: 17, f: 4 },
+      { id: "cottage", name: "lowfat cottage cheese", label: "Cottage ch.", cal: 90, p: 14, f: 0 , sv: "113g · ½ cup" },
+      { id: "cheese", name: "lowfat cheese", label: "Cheese", cal: 70, p: 8, f: 0 , sv: "28g · ¼ cup" },
+      { id: "babybel", name: "babybel light", label: "Babybel", cal: 50, p: 6, f: 0 , sv: "20g · 1 round" },
+      { id: "parm", name: "parmesan", label: "Parm", cal: 45, p: 4, f: 0 , sv: "10g · 2 tbsp" },
+      { id: "feta", name: "feta", label: "Feta", cal: 75, p: 4, f: 0 , sv: "28g · ¼ cup" },
+      { id: "chickenthigh", name: "chicken thigh", label: "Chix thigh", cal: 150, p: 21, f: 0 , sv: "85g · 3 oz" },
+      { id: "chickenbreast", name: "chicken breast", label: "Chix breast", cal: 185, p: 35, f: 0 , sv: "120g · 4 oz" },
+      { id: "leanbeef", name: "94% lean beef", label: "Lean beef", cal: 180, p: 26, f: 0 , sv: "112g · 4 oz" },
+      { id: "bacon", name: "bacon slice", label: "Bacon", cal: 35, p: 3, f: 0 , sv: "12g · 1 slice" },
+      { id: "pork", name: "pork tenderloin", label: "Pork tender.", cal: 135, p: 26, f: 0 , sv: "112g · 4 oz" },
+      { id: "turkeyslice", name: "deli turkey slice", label: "Deli turkey", cal: 30, p: 5, f: 0 , sv: "28g · 1 slice" },
+      { id: "salami", name: "salami slice", label: "Salami", cal: 40, p: 2, f: 0 , sv: "12g · 1 slice" },
+      { id: "chomps", name: "chomps stick", label: "Chomps", cal: 100, p: 10, f: 0 , sv: "32g · 1 stick" },
+      { id: "egg", name: "egg", label: "Egg", cal: 75, p: 6, f: 0 , sv: "50g · 1 large" },
+      { id: "milk", name: "fairlife lowfat milk", label: "Milk", cal: 110, p: 13, f: 0 , sv: "240g · 1 cup" },
+      { id: "yogurt", name: "lowfat greek yogurt", label: "Greek yog.", cal: 150, p: 20, f: 0 , sv: "170g · ¾ cup" },
+      { id: "proteinpowder", name: "protein powder scoop", label: "Protein scoop", cal: 110, p: 20, f: 0 , sv: "31g · 1 scoop" },
+      { id: "builtbar", name: "built puff chocolate chunk bar", label: "Built puff", cal: 130, p: 17, f: 4 , sv: "40g · 1 bar" },
     ],
   },
   {
     id: "fruit", label: "Fruiti-tutti",
     items: [
-      { id: "raspberry", name: "raspberries", label: "Raspberries", cal: 65, p: 1, f: 8 },
-      { id: "strawberry", name: "strawberries", label: "Strawberries", cal: 50, p: 1, f: 3 },
-      { id: "blueberry", name: "blueberries", label: "Blueberries", cal: 85, p: 1, f: 4 },
-      { id: "watermelon", name: "1 cup watermelon", label: "Watermelon", cal: 45, p: 1, f: 1 },
-      { id: "apple", name: "apple", label: "Apple", cal: 95, p: 0, f: 4 },
-      { id: "mandarin", name: "mandarin", label: "Mandarin", cal: 50, p: 1, f: 2 },
-      { id: "peach", name: "peach", label: "Peach", cal: 60, p: 1, f: 2 },
-      { id: "pineapple", name: "1 cup pineapple", label: "Pineapple", cal: 82, p: 1, f: 2 },
-      { id: "grapes", name: "1 cup grapes", label: "Grapes", cal: 62, p: 1, f: 1 },
+      { id: "raspberry", name: "raspberries", label: "Raspberries", cal: 65, p: 1, f: 8 , sv: "123g · 1 cup" },
+      { id: "strawberry", name: "strawberries", label: "Strawberries", cal: 50, p: 1, f: 3 , sv: "150g · 1 cup" },
+      { id: "blueberry", name: "blueberries", label: "Blueberries", cal: 85, p: 1, f: 4 , sv: "148g · 1 cup" },
+      { id: "watermelon", name: "1 cup watermelon", label: "Watermelon", cal: 45, p: 1, f: 1 , sv: "152g · 1 cup" },
+      { id: "apple", name: "apple", label: "Apple", cal: 95, p: 0, f: 4 , sv: "180g · 1 medium" },
+      { id: "mandarin", name: "mandarin", label: "Mandarin", cal: 50, p: 1, f: 2 , sv: "88g · 1 fruit" },
+      { id: "peach", name: "peach", label: "Peach", cal: 60, p: 1, f: 2 , sv: "150g · 1 medium" },
+      { id: "pineapple", name: "1 cup pineapple", label: "Pineapple", cal: 82, p: 1, f: 2 , sv: "165g · 1 cup" },
+      { id: "grapes", name: "1 cup grapes", label: "Grapes", cal: 62, p: 1, f: 1 , sv: "92g · 1 cup" },
     ],
   },
   {
@@ -1441,68 +1441,68 @@ const STAPLE_CATS = [
     items: [
       /* ft: fiber-freebie tier (explicit; raw servings only). Peas, carrots,
          avocado stay untagged by design \u2014 never freebies. */
-      { id: "tomato", name: "cherry tomatoes", label: "Cherry toms", cal: 30, p: 1, f: 2, ft: 2 },
-      { id: "cuke", name: "mini cucumbers", label: "Mini cukes", cal: 30, p: 1, f: 1, ft: 1 },
-      { id: "avocado", name: "1/4 avocado", label: "\u00bc Avocado", cal: 60, p: 1, f: 3 },
-      { id: "lettuce", name: "lettuce", label: "Lettuce", cal: 10, p: 1, f: 1, ft: 1 },
-      { id: "broccoli", name: "broccoli", label: "Broccoli", cal: 30, p: 2, f: 2, ft: 2 },
-      { id: "peas", name: "peas", label: "Peas", cal: 60, p: 4, f: 4 },
-      { id: "carrots", name: "baby carrots", label: "Baby carrots", cal: 30, p: 1, f: 2 },
-      { id: "bellpepper", name: "bell pepper", label: "Bell pepper", cal: 30, p: 1, f: 2, ft: 2 },
-      { id: "greenbeans", name: "green beans", label: "Green beans", cal: 35, p: 2, f: 3, ft: 2 },
+      { id: "tomato", name: "cherry tomatoes", label: "Cherry toms", cal: 30, p: 1, f: 2, ft: 2 , sv: "150g · 1 cup" },
+      { id: "cuke", name: "mini cucumbers", label: "Mini cukes", cal: 30, p: 1, f: 1, ft: 1 , sv: "200g · 2 minis" },
+      { id: "avocado", name: "1/4 avocado", label: "\u00bc Avocado", cal: 60, p: 1, f: 3 , sv: "34g · ¼ fruit" },
+      { id: "lettuce", name: "lettuce", label: "Lettuce", cal: 10, p: 1, f: 1, ft: 1 , sv: "50g · 1 cup" },
+      { id: "broccoli", name: "broccoli", label: "Broccoli", cal: 30, p: 2, f: 2, ft: 2 , sv: "90g · 1 cup" },
+      { id: "peas", name: "peas", label: "Peas", cal: 60, p: 4, f: 4 , sv: "80g · ½ cup" },
+      { id: "carrots", name: "baby carrots", label: "Baby carrots", cal: 30, p: 1, f: 2 , sv: "85g · 10 pieces" },
+      { id: "bellpepper", name: "bell pepper", label: "Bell pepper", cal: 30, p: 1, f: 2, ft: 2 , sv: "150g · 1 medium" },
+      { id: "greenbeans", name: "green beans", label: "Green beans", cal: 35, p: 2, f: 3, ft: 2 , sv: "125g · 1 cup" },
     ],
   },
   {
     id: "grains", label: "Grain",
     items: [
-      { id: "lowcarbtortilla", name: "low carb tortilla", label: "LC tortilla", cal: 70, p: 5, f: 12 },
-      { id: "solabagel", name: "sola bagel", label: "Sola bagel", cal: 90, p: 9, f: 14 },
-      { id: "sourdough", name: "sourdough slice", label: "Sourdough", cal: 100, p: 3, f: 1 },
-      { id: "englishmuffin", name: "english muffin", label: "Eng. muffin", cal: 120, p: 4, f: 2 },
-      { id: "oats", name: "1/2 cup oats", label: "Oats", cal: 150, p: 5, f: 4 },
-      { id: "whiterice", name: "1/2 cup white rice", label: "White rice", cal: 100, p: 2, f: 0 },
-      { id: "pasta", name: "1/2 cup pasta", label: "Pasta", cal: 110, p: 4, f: 1 },
-      { id: "proteinpasta", name: "1/2 cup protein pasta", label: "Prot. pasta", cal: 110, p: 7, f: 3 },
-      { id: "blackbeans", name: "black beans", label: "Black beans", cal: 110, p: 7, f: 7 },
-      { id: "potato", name: "potato", label: "Potato", cal: 160, p: 4, f: 4 },
-      { id: "sweetpotato", name: "sweet potato", label: "Sweet potato", cal: 110, p: 2, f: 4 },
-      { id: "squash", name: "squash", label: "Squash", cal: 80, p: 2, f: 6 },
+      { id: "lowcarbtortilla", name: "low carb tortilla", label: "LC tortilla", cal: 70, p: 5, f: 12 , sv: "42g · 1 tortilla" },
+      { id: "solabagel", name: "sola bagel", label: "Sola bagel", cal: 90, p: 9, f: 14 , sv: "80g · 1 bagel" },
+      { id: "sourdough", name: "sourdough slice", label: "Sourdough", cal: 100, p: 3, f: 1 , sv: "36g · 1 slice" },
+      { id: "englishmuffin", name: "english muffin", label: "Eng. muffin", cal: 120, p: 4, f: 2 , sv: "57g · 1 muffin" },
+      { id: "oats", name: "1/2 cup oats", label: "Oats", cal: 150, p: 5, f: 4 , sv: "40g · ½ cup dry" },
+      { id: "whiterice", name: "1/2 cup white rice", label: "White rice", cal: 100, p: 2, f: 0 , sv: "80g · ½ cup" },
+      { id: "pasta", name: "1/2 cup pasta", label: "Pasta", cal: 110, p: 4, f: 1 , sv: "70g · ½ cup" },
+      { id: "proteinpasta", name: "1/2 cup protein pasta", label: "Prot. pasta", cal: 110, p: 7, f: 3 , sv: "70g · ½ cup" },
+      { id: "blackbeans", name: "black beans", label: "Black beans", cal: 110, p: 7, f: 7 , sv: "130g · ½ cup" },
+      { id: "potato", name: "potato", label: "Potato", cal: 160, p: 4, f: 4 , sv: "170g · 1 medium" },
+      { id: "sweetpotato", name: "sweet potato", label: "Sweet potato", cal: 110, p: 2, f: 4 , sv: "130g · 1 medium" },
+      { id: "squash", name: "squash", label: "Squash", cal: 80, p: 2, f: 6 , sv: "200g · 1 cup" },
     ],
   },
   {
     id: "snacks", label: "Snack",
     items: [
-      { id: "popchips", name: "pop chips", label: "Pop chips", cal: 130, p: 1, f: 1 },
-      { id: "pistachio", name: "1/4 cup pistachios", label: "Pistachios", cal: 170, p: 6, f: 3 },
-      { id: "pitabites", name: "pita bite crackers", label: "Pita bites", cal: 130, p: 3, f: 1 },
-      { id: "popcorn", name: "skinny pop popcorn", label: "Popcorn", cal: 150, p: 2, f: 3 },
-      { id: "tortillachips", name: "tortilla chips", label: "Tortilla ch.", cal: 140, p: 2, f: 1 },
-      { id: "potatochips", name: "potato chips", label: "Potato chips", cal: 150, p: 2, f: 1 },
+      { id: "popchips", name: "pop chips", label: "Pop chips", cal: 130, p: 1, f: 1 , sv: "28g · ~20 chips" },
+      { id: "pistachio", name: "1/4 cup pistachios", label: "Pistachios", cal: 170, p: 6, f: 3 , sv: "30g · ¼ cup" },
+      { id: "pitabites", name: "pita bite crackers", label: "Pita bites", cal: 130, p: 3, f: 1 , sv: "28g · ~11 pieces" },
+      { id: "popcorn", name: "skinny pop popcorn", label: "Popcorn", cal: 150, p: 2, f: 3 , sv: "28g · ~4 cups" },
+      { id: "tortillachips", name: "tortilla chips", label: "Tortilla ch.", cal: 140, p: 2, f: 1 , sv: "28g · ~12 chips" },
+      { id: "potatochips", name: "potato chips", label: "Potato chips", cal: 150, p: 2, f: 1 , sv: "28g · ~15 chips" },
     ],
   },
   {
     id: "sweets", label: "Sweet",
     items: [
-      { id: "chocolate", name: "dark chocolate square", label: "Dark choc.", cal: 55, p: 1, f: 1 },
-      { id: "drizzbites", name: "drizzilicious bites", label: "Drizzilicious", cal: 100, p: 1, f: 1 },
-      { id: "fruitriot", name: "fruit riot sour mango", label: "Fruit riot", cal: 80, p: 1, f: 1 },
-      { id: "yasso", name: "yasso bar", label: "Yasso bar", cal: 100, p: 5, f: 0 },
-      { id: "icecream", name: "1/2 cup ice cream", label: "Ice cream", cal: 140, p: 2, f: 0 },
-      { id: "nerds", name: "nerd clusters handful", label: "Nerd clusters", cal: 90, p: 0, f: 0 },
+      { id: "chocolate", name: "dark chocolate square", label: "Dark choc.", cal: 55, p: 1, f: 1 , sv: "10g · 1 square" },
+      { id: "drizzbites", name: "drizzilicious bites", label: "Drizzilicious", cal: 100, p: 1, f: 1 , sv: "14g · 1 pack" },
+      { id: "fruitriot", name: "fruit riot sour mango", label: "Fruit riot", cal: 80, p: 1, f: 1 , sv: "57g · ½ cup" },
+      { id: "yasso", name: "yasso bar", label: "Yasso bar", cal: 100, p: 5, f: 0 , sv: "65g · 1 bar" },
+      { id: "icecream", name: "1/2 cup ice cream", label: "Ice cream", cal: 140, p: 2, f: 0 , sv: "66g · ½ cup" },
+      { id: "nerds", name: "nerd clusters handful", label: "Nerd clusters", cal: 90, p: 0, f: 0 , sv: "26g · handful" },
     ],
   },
   {
     id: "sauces", label: "Sauce",
     items: [
-      { id: "lfmayo", name: "low fat mayo", label: "LF mayo", cal: 35, p: 0, f: 0 },
-      { id: "guac", name: "guac", label: "Guac", cal: 50, p: 1, f: 2 },
-      { id: "ranch", name: "bolthouse yogurt ranch", label: "Yog. ranch", cal: 45, p: 1, f: 0 },
-      { id: "caesar", name: "bolthouse yogurt caesar", label: "Yog. caesar", cal: 45, p: 1, f: 0 },
-      { id: "oliveoil", name: "olive oil", label: "Olive oil", cal: 120, p: 0, f: 0 },
-      { id: "avospray", name: "avocado oil spray", label: "Avo spray", cal: 10, p: 0, f: 0 },
-      { id: "maplesyrup", name: "maple syrup", label: "Maple syrup", cal: 52, p: 0, f: 0 },
-      { id: "honey", name: "honey", label: "Honey", cal: 64, p: 0, f: 0 },
-      { id: "ketchup", name: "ketchup", label: "Ketchup", cal: 20, p: 0, f: 0 },
+      { id: "lfmayo", name: "low fat mayo", label: "LF mayo", cal: 35, p: 0, f: 0 , sv: "15g · 1 tbsp" },
+      { id: "guac", name: "guac", label: "Guac", cal: 50, p: 1, f: 2 , sv: "30g · 2 tbsp" },
+      { id: "ranch", name: "bolthouse yogurt ranch", label: "Yog. ranch", cal: 45, p: 1, f: 0 , sv: "30g · 2 tbsp" },
+      { id: "caesar", name: "bolthouse yogurt caesar", label: "Yog. caesar", cal: 45, p: 1, f: 0 , sv: "30g · 2 tbsp" },
+      { id: "oliveoil", name: "olive oil", label: "Olive oil", cal: 120, p: 0, f: 0 , sv: "14g · 1 tbsp" },
+      { id: "avospray", name: "avocado oil spray", label: "Avo spray", cal: 10, p: 0, f: 0 , sv: "1g · 1-sec spray" },
+      { id: "maplesyrup", name: "maple syrup", label: "Maple syrup", cal: 52, p: 0, f: 0 , sv: "20g · 1 tbsp" },
+      { id: "honey", name: "honey", label: "Honey", cal: 64, p: 0, f: 0 , sv: "21g · 1 tbsp" },
+      { id: "ketchup", name: "ketchup", label: "Ketchup", cal: 20, p: 0, f: 0 , sv: "17g · 1 tbsp" },
     ],
   },
 ];
@@ -3753,11 +3753,12 @@ function Streakhouse() {
                         const fb = !!(d.ft && freebieOn(d.ft)); /* live state, not just the tag */
                         return (
                           <button key={d.id} className={`pourbtn ${fb ? "freebie" : ""}`} disabled={pastDay ? false : day.closed} onClick={() => logStaple(d)}
-                            aria-label={`Log ${d.name}, ${fb ? "0 calories (fiber freebie)" : `${d.cal} calories`}`}>
+                            aria-label={`Log ${d.name}, ${fb ? "0 calories (fiber freebie)" : `${d.cal} calories`}${d.sv ? `, serving ${d.sv}` : ""}`}>
                             {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
                             <StapleIcon kind={d.id} />
                             <span className="pl">{d.label}</span>
                             <span className="pc num">{fb ? "0 cal" : d.cal}</span>
+                            {d.sv && <span className="ps num">{d.sv}</span>}
                           </button>
                         );
                       })}
@@ -4132,7 +4133,7 @@ function Streakhouse() {
                               <button key={pt.l} type="button" className={`portionchip ${editEntry.pfrac === pt.f && !editEntry.pin ? "on" : ""}`}
                                 aria-label={`Scale entry to ${pt.l} of original`} onClick={() => scaleEdit(pt.f, pt.l)}>{pt.l}</button>
                             ))}
-                            <input value={editEntry.pin || ""} onChange={(ev) => scaleEditCustom(ev.target.value)} placeholder="40%" aria-label="Custom portion of this entry" style={{ maxWidth: 56 }} />
+                            <input value={editEntry.pin || ""} onChange={(ev) => scaleEditCustom(ev.target.value)} placeholder="40%" aria-label="Custom portion of this entry" style={{ maxWidth: 56, minWidth: 44 }} />
                           </div>
                           <div className="estnote">of the original amounts — calories, protein & fiber all scale together.</div>
                           <div className="row" style={{ marginTop: 6 }}>
@@ -4792,8 +4793,10 @@ function Streakhouse() {
         button.cathdr { width:100%; display:flex; justify-content:space-between; align-items:center; background:#FFFDF8; border:2.5px solid #1E1A1C; border-radius:12px; padding:8px 12px; margin-top:10px; font-weight:800; font-size:12px; letter-spacing:.6px; text-transform:uppercase; color:#1E1A1C; cursor:pointer; box-shadow:2px 2px 0 #1E1A1C; font-family:inherit; }
         button.cathdr.on { background:#FFC93C; }
         button.cathdr.mealhdr { padding:6px 12px; font-size:11px; background:#FAF3E7; }
-        .portionrow { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:10px; }
-        button.portionchip { background:#FFFDF8; border:2px solid #1E1A1C; border-radius:999px; padding:4px 10px; font-weight:800; font-size:12px; color:#1E1A1C; cursor:pointer; font-family:'Space Mono',monospace; box-shadow:1.5px 1.5px 0 #1E1A1C; }
+        .portionrow { display:flex; flex-wrap:nowrap; gap:4px; align-items:center; margin-top:10px; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; padding-bottom:2px; }
+        .portionrow::-webkit-scrollbar { display:none; }
+        .portionrow > * { flex:0 0 auto; }
+        button.portionchip { background:#FFFDF8; border:2px solid #1E1A1C; border-radius:999px; padding:3px 8px; font-weight:800; font-size:11px; color:#1E1A1C; cursor:pointer; font-family:'Space Mono',monospace; box-shadow:1.5px 1.5px 0 #1E1A1C; }
         button.portionchip.on { background:#7ED957; }
         button.portionchip:active { transform:translate(1.5px,1.5px); box-shadow:0 0 0 #1E1A1C; }
         .suppbar { background:#EDE3FF; border:2.5px solid #1E1A1C; border-radius:14px; padding:10px 12px; margin-bottom:12px; box-shadow:2.5px 2.5px 0 #1E1A1C; }
@@ -4816,6 +4819,7 @@ function Streakhouse() {
         button.pourbtn:disabled { opacity:.45; }
         .pourbtn .pl { font-size:10px; font-weight:800; letter-spacing:.2px; color:#1E1A1C; line-height:1.1; }
         .pourbtn .pc { font-size:9px; color:#5C5254; }
+        .pourbtn .ps { font-size:7.5px; color:#8A8184; line-height:1.15; letter-spacing:-0.03em; }
         .pourbadge { position:absolute; top:-9px; right:-9px; background:#FF5FA2; color:#1E1A1C; border:2px solid #1E1A1C; border-radius:999px; min-width:21px; height:21px; padding:0 4px; font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center; box-shadow:2px 2px 0 #1E1A1C; }
         /* fiber-freebie live treatment: neon lime + double outline (inner ink
            border, cream gap, outer ink ring) on top of the usual hard shadow */
