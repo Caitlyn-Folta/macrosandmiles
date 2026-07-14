@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v44";
+const APP_VERSION = "mm-v45";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -2791,7 +2791,15 @@ function Streakhouse() {
     const base = portion === 1
       ? { name: d.name, cal: d.cal, p: d.p, f: d.f }
       : { name: `${portionLabel} \u00d7 ${d.name}`, cal: Math.round(d.cal * portion), p: Math.round(d.p * portion), f: Math.round(d.f * portion) };
-    await addEntries([freebify(base, d.ft || null, null)]);
+    const ent = freebify(base, d.ft || null, null);
+    if (pastDay) {
+      /* time machine open: the tap lands on the viewed day, not today */
+      const e = Object.assign({ id: nextEntryId(), hour: 12, m: Date.now() }, ent);
+      await commitPastDay(Object.assign({}, pastDay.doc, { entries: [...pastDay.doc.entries, e] }));
+      flash(`${ent.name} added to ${shortDate(pastDay.date)}`);
+    } else {
+      await addEntries([ent]);
+    }
     if (portion !== 1) { setPortion(1); setPortionLabel("1"); setPortionCustom(false); setPortionInput(""); }
   };
 
@@ -2820,7 +2828,11 @@ function Streakhouse() {
      sync across devices like today's; history (and thus the weekly bank)
      recalculates from the amended day. ---------- */
   const openPastDay = async (ds) => {
-    if (ds === today) { flash("That's today — it's already open below."); return; }
+    if (ds === today) {
+      if (pastDay) { setPastDayState(null); flash("Back to today."); }
+      else flash("That's today — it's already open below.");
+      return;
+    }
     const doc = (await sget(K.day(ds))) || emptyDay(ds);
     setPastDayState({ date: ds, doc });
     setPastEdit(null); setPastAdd({ name: "", cal: "", p: "", f: "" });
@@ -3607,6 +3619,62 @@ function Streakhouse() {
   );
 
 
+  /* The Pantry renders in two places: the normal today view, and inside the
+     time-machine view where taps log into the viewed past day. */
+  const pantryDay = pastDay ? pastDay.doc : day;
+  const pantryCard = (
+          <div className="card">
+            <h2>The Pantry</h2>
+            <div className="sub">{pastDay
+              ? `Logging into ${shortDate(pastDay.date)} — every tap lands on that day.`
+              : "The frequent fliers — one tap logs a serving. Tap a shelf to open it."}</div>
+            <div className="portionrow" role="group" aria-label="Portion of a serving">
+              <span className="qdesc" style={{ whiteSpace: "nowrap", marginRight: 2 }}>Portion</span>
+              {PORTIONS.map((pt) => (
+                <button key={pt.l} className={`portionchip ${!portionCustom && portion === pt.f ? "on" : ""}`}
+                  aria-pressed={!portionCustom && portion === pt.f}
+                  onClick={() => { setPortion(pt.f); setPortionLabel(pt.l); setPortionCustom(false); setPortionInput(""); }}>{pt.l}</button>
+              ))}
+              <button className={`portionchip ${portionCustom ? "on" : ""}`} aria-label="Custom portion" onClick={() => setPortionCustom(!portionCustom)}>{"\u2026"}</button>
+            </div>
+            {portionCustom && (
+              <div className="row" style={{ marginTop: 6 }}>
+                <input value={portionInput} onChange={(e) => setCustomPortion(e.target.value)} placeholder="any amount: 0.4, 40%, or 2/3" aria-label="Custom portion amount" inputMode="decimal" />
+              </div>
+            )}
+            {portion !== 1 && <div className="sub" style={{ marginTop: 6 }}>Next tap logs <b className="num">{portionLabel}</b> of a serving {"\u2014"} calories and macros scale automatically, then it resets to a full serving.</div>}
+            {STAPLE_CATS.map((cat) => {
+              const catCount = pantryDay.entries.filter((en) => cat.items.some((d) => d.name === en.name)).length;
+              const open = openCat === cat.id;
+              return (
+                <div key={cat.id}>
+                  <button className={`cathdr ${open ? "on" : ""}`} aria-expanded={open} onClick={() => setOpenCat(open ? null : cat.id)}>
+                    <span>{cat.label}</span>
+                    <span className="num" style={{ fontSize: 11 }}>{catCount > 0 ? `${catCount} today \u00b7 ` : ""}{cat.items.length} {open ? "\u25b4" : "\u25be"}</span>
+                  </button>
+                  {open && (
+                    <div className="pours" style={{ marginTop: 10, marginBottom: 6 }}>
+                      {cat.items.map((d) => {
+                        const n = pantryDay.entries.filter((en) => en.name === d.name).length;
+                        const fb = !!(d.ft && freebieOn(d.ft)); /* live state, not just the tag */
+                        return (
+                          <button key={d.id} className={`pourbtn ${fb ? "freebie" : ""}`} disabled={pastDay ? false : day.closed} onClick={() => logStaple(d)}
+                            aria-label={`Log ${d.name}, ${fb ? "0 calories (fiber freebie)" : `${d.cal} calories`}`}>
+                            {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
+                            <StapleIcon kind={d.id} />
+                            <span className="pl">{d.label}</span>
+                            <span className="pc num">{fb ? "0 cal" : d.cal}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+  );
+
   const eatsContent = (
     <React.Fragment>
           <div className="peptalk">
@@ -3622,7 +3690,7 @@ function Streakhouse() {
           <div className="chain" aria-label="Last 14 days — tap a day to view or edit it">
             {chain.map((d) => (
               <div key={d.ds} role="button" tabIndex={0}
-                className={`link ${d.shield ? "shield" : d.ok ? "ok" : ""} ${d.logged ? "logged" : ""} ${d.isToday ? "today" : ""}`}
+                className={`link ${d.shield ? "shield" : d.ok ? "ok" : ""} ${d.logged ? "logged" : ""} ${d.isToday ? "today" : ""} ${pastDay && pastDay.date === d.ds ? "viewing" : ""}`}
                 title={d.ds + (d.shield ? " (shielded)" : "") + " — tap to edit"}
                 aria-label={`Open ${d.ds}`}
                 onClick={() => openPastDay(d.ds)}
@@ -3630,10 +3698,11 @@ function Streakhouse() {
             ))}
           </div>
 
-          {pastDay && (
+          {pastDay ? (
+            <React.Fragment>
             <div className="card" style={{ borderColor: "#7C48D8" }}>
               <h2>🕰 Time machine · {shortDate(pastDay.date)}</h2>
-              <div className="sub">Editing a past day. That day's totals — and the weekly bank — recalculate as you go. The ledger accepts amendments.</div>
+              <div className="sub">Editing a past day — today is parked until you come back. That day's totals and the weekly bank recalculate as you go. Tap today's square up top (or the button below) to return.</div>
               {pastDay.doc.entries.length === 0 && <div className="empty">Nothing logged that day.</div>}
               {pastDay.doc.entries.map((e) =>
                 pastEdit && pastEdit.id === e.id ? (
@@ -3681,10 +3750,13 @@ function Streakhouse() {
                 <button className="pri" onClick={pastAddEntry} disabled={!pastAdd.name.trim() || isNaN(parseInt(pastAdd.cal, 10))}>Add</button>
               </div>
               <div className="row" style={{ marginTop: 8 }}>
-                <button style={{ width: "100%" }} onClick={() => setPastDayState(null)}>Close the time machine</button>
+                <button style={{ width: "100%" }} onClick={() => setPastDayState(null)}>Back to today</button>
               </div>
             </div>
-          )}
+            {pantryCard}
+            </React.Fragment>
+          ) : (
+            <React.Fragment>
 
           {settings.suppOn && suppList.length > 0 && (suppAllDone && !suppExpand ? (
             <button type="button" className="suppbar alldone" onClick={() => setSuppExpand(true)} aria-label="Supplements complete — tap to reopen the checklist">
@@ -3998,54 +4070,7 @@ function Streakhouse() {
 
           {chatContent}
 
-          <div className="card">
-            <h2>The Pantry</h2>
-            <div className="sub">The frequent fliers — one tap logs a serving. Tap a shelf to open it.</div>
-            <div className="portionrow" role="group" aria-label="Portion of a serving">
-              <span className="qdesc" style={{ whiteSpace: "nowrap", marginRight: 2 }}>Portion</span>
-              {PORTIONS.map((pt) => (
-                <button key={pt.l} className={`portionchip ${!portionCustom && portion === pt.f ? "on" : ""}`}
-                  aria-pressed={!portionCustom && portion === pt.f}
-                  onClick={() => { setPortion(pt.f); setPortionLabel(pt.l); setPortionCustom(false); setPortionInput(""); }}>{pt.l}</button>
-              ))}
-              <button className={`portionchip ${portionCustom ? "on" : ""}`} aria-label="Custom portion" onClick={() => setPortionCustom(!portionCustom)}>{"\u2026"}</button>
-            </div>
-            {portionCustom && (
-              <div className="row" style={{ marginTop: 6 }}>
-                <input value={portionInput} onChange={(e) => setCustomPortion(e.target.value)} placeholder="any amount: 0.4, 40%, or 2/3" aria-label="Custom portion amount" inputMode="decimal" />
-              </div>
-            )}
-            {portion !== 1 && <div className="sub" style={{ marginTop: 6 }}>Next tap logs <b className="num">{portionLabel}</b> of a serving {"\u2014"} calories and macros scale automatically, then it resets to a full serving.</div>}
-            {STAPLE_CATS.map((cat) => {
-              const catCount = day.entries.filter((en) => cat.items.some((d) => d.name === en.name)).length;
-              const open = openCat === cat.id;
-              return (
-                <div key={cat.id}>
-                  <button className={`cathdr ${open ? "on" : ""}`} aria-expanded={open} onClick={() => setOpenCat(open ? null : cat.id)}>
-                    <span>{cat.label}</span>
-                    <span className="num" style={{ fontSize: 11 }}>{catCount > 0 ? `${catCount} today \u00b7 ` : ""}{cat.items.length} {open ? "\u25b4" : "\u25be"}</span>
-                  </button>
-                  {open && (
-                    <div className="pours" style={{ marginTop: 10, marginBottom: 6 }}>
-                      {cat.items.map((d) => {
-                        const n = day.entries.filter((en) => en.name === d.name).length;
-                        const fb = !!(d.ft && freebieOn(d.ft)); /* live state, not just the tag */
-                        return (
-                          <button key={d.id} className={`pourbtn ${fb ? "freebie" : ""}`} disabled={day.closed} onClick={() => logStaple(d)}
-                            aria-label={`Log ${d.name}, ${fb ? "0 calories (fiber freebie)" : `${d.cal} calories`}`}>
-                            {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
-                            <StapleIcon kind={d.id} />
-                            <span className="pl">{d.label}</span>
-                            <span className="pc num">{fb ? "0 cal" : d.cal}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {pantryCard}
 
           <div className="card">
             <h2>Bites, Licks & Tastes</h2>
@@ -4132,6 +4157,8 @@ function Streakhouse() {
               </React.Fragment>
             )}
           </div>
+            </React.Fragment>
+          )}
         </React.Fragment>
   );
 
@@ -4614,6 +4641,7 @@ function Streakhouse() {
         .chain { display:flex; gap:0; align-items:center; margin:0 0 16px; }
         .link { flex:1; height:13px; border-radius:7px; background:#fff; border:2px solid #EBDFC9; margin-right:3px; cursor:pointer; }
         .link:hover { border-color:#1E1A1C; }
+        .link.viewing { border-color:#7C48D8; outline:2px solid #7C48D8; outline-offset:1px; }
         .link.ok { background:#FF5FA2; border-color:#1E1A1C; }
         .link.shield { background:#7ED957; border-color:#1E1A1C; }
         .link.logged:not(.ok):not(.shield) { background:#EBDFC9; border-color:#D9CBAF; }
