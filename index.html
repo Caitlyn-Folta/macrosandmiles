@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v49";
+const APP_VERSION = "mm-v50";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -230,11 +230,18 @@ const dayScore = (ds, history, settings, liveDate, live) => {
   return score;
 };
 
+/* Which meal window an entry belongs to. An explicit slot (chosen at log
+   time) wins, so logging lunch at 4pm still files under Midday; otherwise it
+   falls back to the wall-clock hour it was logged at. */
+const HOUR_SLOT = (h) => (h == null ? "evening" : h < 10 ? "morning" : h < 15 ? "midday" : "evening");
+const slotOf = (e) => e.slot || HOUR_SLOT(e.hour);
+const nowSlot = () => HOUR_SLOT(new Date().getHours());
+
 /* ---------- quests ---------- */
 const windowsFilled = (day) => ({
-  morning: day.entries.some((e) => e.hour < 10),
-  midday: day.entries.some((e) => e.hour >= 10 && e.hour < 15),
-  evening: day.entries.some((e) => e.hour >= 15 && e.hour < 21),
+  morning: day.entries.some((e) => slotOf(e) === "morning"),
+  midday: day.entries.some((e) => slotOf(e) === "midday"),
+  evening: day.entries.some((e) => slotOf(e) === "evening"),
 });
 
 const WEEKDAY_QUESTS = [
@@ -2138,10 +2145,11 @@ function StapleIcon({ kind, size = 38 }) {
 
 /* log grouping: same windows as the meal pips, evening catches the late stuff */
 const MEAL_GROUPS = [
-  { id: "morning", label: "Morning", test: (e) => e.hour < 10 },
-  { id: "midday", label: "Midday", test: (e) => e.hour >= 10 && e.hour < 15 },
-  { id: "evening", label: "Evening", test: (e) => e.hour >= 15 || e.hour == null },
+  { id: "morning", label: "Morning", test: (e) => slotOf(e) === "morning" },
+  { id: "midday", label: "Midday", test: (e) => slotOf(e) === "midday" },
+  { id: "evening", label: "Evening", test: (e) => slotOf(e) === "evening" },
 ];
+const SLOT_LABEL = { morning: "Morning", midday: "Midday", evening: "Evening" };
 
 function BurritoMeter({ eaten, max }) {
   const pct = Math.max(0, Math.min(100, (eaten / Math.max(1, max)) * 100));
@@ -2408,10 +2416,10 @@ function Streakhouse() {
   const [portionLabel, setPortionLabel] = useState("1");
   const [portionCustom, setPortionCustom] = useState(false);
   const [portionInput, setPortionInput] = useState("");
-  const [openMeals, setOpenMeals] = useState(() => {
-    const h = new Date().getHours();
-    return [h < 10 ? "morning" : h < 15 ? "midday" : "evening"];
-  });
+  const [openMeals, setOpenMeals] = useState(() => [nowSlot()]);
+  /* null = follow the clock (default); a value = the user pinned the next log
+     to a specific window. Effective target is logSlot || nowSlot(). */
+  const [logSlot, setLogSlot] = useState(null);
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const chatEndRef = useRef(null);
@@ -2854,9 +2862,6 @@ function Streakhouse() {
 
   const addEntries = async (items) => {
     const hour = new Date().getHours();
-    /* a fresh log always lands in a visible group */
-    const seg = hour < 10 ? "morning" : hour < 15 ? "midday" : "evening";
-    setOpenMeals((prev) => (prev.includes(seg) ? prev : [...prev, seg]));
     const es = items.map((it) => {
       const e = {
         id: nextEntryId(),
@@ -2865,11 +2870,15 @@ function Streakhouse() {
         p: Math.max(0, Math.round(it.p || 0)),
         f: Math.max(0, Math.round(it.f || 0)),
         hour,
+        slot: it.slot || logSlot || nowSlot(), /* pinned window wins; else the clock */
       };
       /* freebie snapshot from log time rides along on the entry */
       if (it.freebieApplied) { e.freebieApplied = true; e.freebieTier = it.freebieTier; e.ocal = Math.round(it.ocal || 0); }
       return e;
     });
+    /* open whichever windows the new food landed in, so it's visible */
+    const usedSlots = new Set(es.map((e) => e.slot));
+    setOpenMeals((prev) => [...new Set([...prev, ...usedSlots])]);
     await commitDay(Object.assign({}, day, { entries: [...day.entries, ...es], xp: day.xp + 5 * es.length }));
     await awardXp(5 * es.length);
 
@@ -3026,7 +3035,10 @@ function Streakhouse() {
       f: Math.max(0, parseInt(editEntry.f, 10) || 0),
       m: Date.now(), /* modified-at: the sync merge keeps the newer edit */
     };
+    if (editEntry.slot) fields.slot = editEntry.slot; /* re-filed to a chosen window */
     await commitDay(Object.assign({}, day, { entries: day.entries.map((e) => (e.id === editEntry.id ? Object.assign({}, e, fields) : e)) }));
+    /* if it moved to a new window, open that window so the move is visible */
+    if (editEntry.slot) setOpenMeals((prev) => (prev.includes(editEntry.slot) ? prev : [...prev, editEntry.slot]));
     setEditEntry(null);
   };
   /* so = steps origin, displayed under the count so a wrong number can be
@@ -3958,12 +3970,19 @@ function Streakhouse() {
               </React.Fragment>
             )}
 
-            <div className="qname" style={{ marginTop: 14 }}><MIcon k="fork" size={14} /> Fuel</div>
-            <div className="pips" aria-label="Meal windows — filled means you logged in that window; tap to log">
-              <div role="button" tabIndex={0} className={`pip ${wins.morning ? "filled" : ""}`} onClick={() => foodInputRef.current && foodInputRef.current.focus()}>morning</div>
-              <div role="button" tabIndex={0} className={`pip ${wins.midday ? "filled" : ""}`} onClick={() => foodInputRef.current && foodInputRef.current.focus()}>midday</div>
-              <div role="button" tabIndex={0} className={`pip ${wins.evening ? "filled" : ""}`} onClick={() => foodInputRef.current && foodInputRef.current.focus()}>evening</div>
+            <div className="qname" style={{ marginTop: 14 }}><MIcon k="fork" size={14} /> Fuel {"·"} filing under <b style={{ color: "#7C48D8" }}>{SLOT_LABEL[logSlot || nowSlot()]}</b>{logSlot ? " (pinned)" : ""}</div>
+            <div className="pips" aria-label="Choose which meal window the next food logs into">
+              {MEAL_GROUPS.map((g) => {
+                const aimed = (logSlot || nowSlot()) === g.id;
+                return (
+                  <div key={g.id} role="button" tabIndex={0} aria-pressed={aimed}
+                    className={`pip ${wins[g.id] ? "filled" : ""} ${aimed ? "slotaim" : ""}`}
+                    onClick={() => { setLogSlot(logSlot === g.id ? null : g.id); foodInputRef.current && foodInputRef.current.focus(); }}
+                    onKeyDown={(e) => e.key === "Enter" && setLogSlot(logSlot === g.id ? null : g.id)}>{g.label.toLowerCase()}</div>
+                );
+              })}
             </div>
+            <div className="sub" style={{ marginTop: 4, marginBottom: 0 }}>Follows the time of day; tap a window to pin the next food there — handy for logging lunch after the fact. Tap it again to unpin.</div>
 
             <div className="row" style={{ alignItems: "stretch" }}>
               <textarea ref={foodInputRef} rows={3} className="foodbox" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={foodPh} aria-label="Food description"
@@ -4164,6 +4183,13 @@ function Streakhouse() {
                             <input value={editEntry.pin || ""} onChange={(ev) => scaleEditCustom(ev.target.value)} placeholder="40%" aria-label="Custom portion of this entry" style={{ maxWidth: 56, minWidth: 44 }} />
                           </div>
                           <div className="estnote">of the original amounts — calories, protein & fiber all scale together.</div>
+                          <div className="portionrow" role="group" aria-label="Move this entry to a meal window" style={{ marginTop: 8 }}>
+                            <span className="qdesc" style={{ whiteSpace: "nowrap", marginRight: 2 }}>Window</span>
+                            {MEAL_GROUPS.map((g) => (
+                              <button key={g.id} type="button" className={`portionchip ${(editEntry.slot || slotOf(e)) === g.id ? "on" : ""}`}
+                                aria-label={`Move to ${g.label}`} onClick={() => setEditEntry(Object.assign({}, editEntry, { slot: g.id }))}>{g.label}</button>
+                            ))}
+                          </div>
                           <div className="row" style={{ marginTop: 6 }}>
                             <button className="pri" style={{ flex: 1 }} onClick={saveEditEntry} disabled={!editEntry.name.trim() || isNaN(parseInt(editEntry.cal, 10))}>Save</button>
                             <button onClick={() => setEditEntry(null)}>Cancel</button>
@@ -4867,6 +4893,7 @@ function Streakhouse() {
         .pip { flex:1; text-align:center; font-size:11px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; padding:7px 0; border:2.5px solid #1E1A1C; border-radius:999px; background:#fff; color:#5C5254; cursor:pointer; }
         .pip.filled { background:#7ED957; color:#1E1A1C; }
         .pip.heavy { background:#FF5FA2; color:#1E1A1C; }
+        .pip.slotaim { box-shadow:0 0 0 2px #FFFDF8, 0 0 0 4px #7C48D8; }
         .bank { background:#DFF6D2; border:2px solid #52B52E; border-radius:14px; padding:10px 14px; font-size:13px; font-weight:800; margin-top:12px; }
         .macrorow { display:flex; align-items:center; gap:14px; padding:9px 0; border-bottom:2px dotted #EBDFC9; }
         .macrorow:last-of-type { border-bottom:none; }
