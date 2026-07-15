@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v50";
+const APP_VERSION = "mm-v51";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -1308,6 +1308,8 @@ function MIcon({ k, size = 15 }) {
     send: <g><rect x="8" y="3" width="10" height="18" rx="2.5" fill="#C9CFD9" {...st} /><path d="M11.5 6 h 3" fill="none" {...st} strokeWidth="1.4" /><path d="M2 12 h 6.5 M 5.8 9 l 3 3 l -3 3" fill="none" {...st} strokeWidth="2" /></g>,
     camera: <g><rect x="3" y="7" width="18" height="12" rx="2.5" fill="#C9CFD9" {...st} /><path d="M8.5 7 L 10 4.5 h 4 L 15.5 7" fill="#C9CFD9" {...st} /><circle cx="12" cy="13" r="3.6" fill="#FFFDF8" {...st} /><circle cx="12" cy="13" r="1.4" fill={INK_ICON} /></g>,
     receipt: <g><path d="M6 3.5 h 12 v 16.5 l -2 -1.5 l -2 1.5 l -2 -1.5 l -2 1.5 l -2 -1.5 l -2 1.5 Z" fill="#FFFDF8" {...st} /><path d="M9 8 h 6 M 9 11.5 h 6 M 9 15 h 4" fill="none" {...st} strokeWidth="1.4" /></g>,
+    book: <g><path d="M4 5 c 3 -1.5 6 -1.5 8 0 v 14 c -2 -1.5 -5 -1.5 -8 0 Z" fill="#7ED957" {...st} /><path d="M20 5 c -3 -1.5 -6 -1.5 -8 0 v 14 c 2 -1.5 5 -1.5 8 0 Z" fill="#FFC93C" {...st} /><path d="M12 5 v 14" fill="none" {...st} strokeWidth="1.6" /></g>,
+    plate: <g><circle cx="12" cy="13" r="8.5" fill="#FFFDF8" {...st} /><circle cx="12" cy="13" r="4.5" fill="#7ED957" stroke={INK_ICON} strokeWidth="1.6" /><path d="M12 2.5 v 6 M 9.5 3 v 5 M 14.5 3 v 5" fill="none" {...st} strokeWidth="1.5" /></g>,
     syncy: <g><path d="M6 10 a 6.5 6.5 0 0 1 11 -2.8 M 17.5 3.5 v 4 h -4" fill="none" {...st} /><path d="M18 14 a 6.5 6.5 0 0 1 -11 2.8 M 6.5 20.5 v -4 h 4" fill="none" {...st} /></g>,
     lock: <g><rect x="6" y="10.5" width="12" height="9.5" rx="2.5" fill="#FFC93C" {...st} /><path d="M8.5 10.5 v -3 a 3.5 3.5 0 0 1 7 0 v 3" fill="none" {...st} /><circle cx="12" cy="15.2" r="1.4" fill={INK_ICON} /></g>,
     flame: <g><path d="M12 3 c 1 3.2 4.2 4.7 4.2 8.7 a 4.9 4.9 0 0 1 -9.8 0 c 0 -2.6 1.2 -3.7 2.2 -5.3 c .8 1 1.3 1.6 1.9 1.6 c .9 0 1.5 -2 1.5 -5 Z" fill="#FF9F1C" {...st} strokeWidth="1.7" /><path d="M12 19.6 a 2.5 2.5 0 0 0 2.5 -2.5 c 0 -1.5 -1.3 -1.9 -2.5 -3.8 c -1.2 1.9 -2.5 2.3 -2.5 3.8 A 2.5 2.5 0 0 0 12 19.6 Z" fill="#FFC93C" stroke={INK_ICON} strokeWidth="1.2" /></g>,
@@ -2392,6 +2394,8 @@ function Streakhouse() {
   const [receiptNote, setReceiptNote] = useState("");
   const [receiptItems, setReceiptItems] = useState(null);
   const receiptRef = useRef(null);
+  const mealRef = useRef(null);
+  const recipeRef = useRef(null);
   const [labelNote, setLabelNote] = useState("");
   const [labelForm, setLabelForm] = useState(null);
   const labelRef = useRef(null);
@@ -3098,6 +3102,7 @@ function Streakhouse() {
   const SOURCE_LABEL = { local: "built-in table", custom: "your food database", cache: "seen before", usda: "USDA lookup", off: "Open Food Facts", ai: "Claude estimate" };
   const estimate = async () => {
     if (!desc.trim()) return;
+    if (URL_RE.test(desc.trim()) && settings.aiUrl) { scanRecipe({ url: desc.trim() }); return; }
     setEstimating(true); setEstimateNote(""); setEstimateItems(null);
     try {
       const { segments } = await lookupFood(desc, settings.aiUrl);
@@ -3173,6 +3178,8 @@ function Streakhouse() {
 
   const submitFood = () => {
     const cal = parseInt(calInput, 10);
+    /* a pasted recipe link goes straight to the recipe reader */
+    if (URL_RE.test(desc.trim()) && settings.aiUrl) { scanRecipe({ url: desc.trim() }); return; }
     if (desc.trim() && !isNaN(cal)) addEntry(desc, cal, parseInt(protInput, 10) || 0, parseInt(fibInput, 10) || 0);
     else if (desc.trim() && !calInput) estimate();
   };
@@ -3285,6 +3292,64 @@ function Streakhouse() {
   const deleteCustomFood = (name) => {
     const next = customFoods.filter((x) => x.k[0] !== name);
     setCustomFoods(next); customStore(next);
+  };
+
+  /* ---------- recipe intake: a blog/cookbook recipe URL or photo -> per-serving
+     macros, dropped into the editable estimate rows (portion box = # servings). ---------- */
+  const URL_RE = /^https?:\/\/\S+$/i;
+  const workerMissingNote = "That needs the AI Worker — set it up in the plan tab (AI lookup).";
+  const scanRecipe = async (payload) => {
+    if (!settings.aiUrl) { setEstimateNote(workerMissingNote); return; }
+    setEstimating(true); setEstimateNote("Reading the recipe…"); setEstimateItems(null);
+    try {
+      const res = await fetch(settings.aiUrl + "/recipe", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      if (res.status === 404 || res.status === 405) throw new Error("your Worker doesn't have /recipe yet — redeploy cloudflare-worker.js");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `recipe HTTP ${res.status}`);
+      if (typeof data.cal !== "number") throw new Error("couldn't find nutrition in that recipe");
+      const srv = data.servings > 0 ? data.servings : 1;
+      setEstimateItems([{
+        id: 0, raw: data.name || "recipe", name: String(data.name || "recipe").toLowerCase().slice(0, 50),
+        cal: String(Math.round(data.cal)), p: String(Math.round(data.protein || 0)), f: String(Math.round(data.fiber || 0)),
+        ft: null, portion: "",
+        note: `per serving${srv ? ` · recipe makes ${srv}` : ""}${data.estimated ? " · macros estimated" : " · from the recipe's label"}`,
+      }]);
+      setEstimateNote(`Per-serving macros ready. Had more than one serving? Put the number in the portion box, then add.`);
+    } catch (e) {
+      setEstimateNote(`Recipe read failed (${e.message}).`);
+    }
+    setEstimating(false);
+  };
+
+  /* ---------- meal photo -> a draft ingredient list you can edit before logging ---------- */
+  const scanMeal = async (file) => {
+    if (!file) return;
+    if (!settings.aiUrl) { setEstimateNote(workerMissingNote); return; }
+    setEstimating(true); setEstimateNote("Looking at your plate…"); setEstimateItems(null);
+    try {
+      const dataUrl = await compressImage(file, 1200, 0.85);
+      const res = await fetch(settings.aiUrl + "/meal", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: dataUrl }),
+      });
+      if (res.status === 404 || res.status === 405) throw new Error("your Worker doesn't have /meal yet — redeploy cloudflare-worker.js");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `meal HTTP ${res.status}`);
+      const items = (data.items || []).filter((it) => it && it.name && typeof it.cal === "number");
+      if (!items.length) throw new Error("couldn't break that meal into ingredients — try a clearer photo");
+      setEstimateItems(items.map((it, i) => ({
+        id: i, raw: `${it.name}${it.amount ? ` (${it.amount})` : ""}`,
+        name: String(it.name).toLowerCase().slice(0, 50),
+        cal: String(Math.round(it.cal)), p: String(Math.round(it.protein || 0)), f: String(Math.round(it.fiber || 0)),
+        ft: null, portion: "",
+        note: `${data.dish ? data.dish + " · " : ""}${it.amount || "photo estimate"} · edit anything`,
+      })));
+      setEstimateNote(`Drafted ${items.length} ingredient${items.length === 1 ? "" : "s"} from your ${data.dish || "meal"} — remove any, fix portions, then add.`);
+    } catch (e) {
+      setEstimateNote(`Meal read failed (${e.message}).`);
+    }
+    setEstimating(false);
   };
 
   const saveSettings = async () => {
@@ -4053,6 +4118,21 @@ function Streakhouse() {
               <input ref={labelRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { scanLabel(e.target.files && e.target.files[0]); e.target.value = ""; }} />
               <input ref={receiptRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { scanReceipt(e.target.files && e.target.files[0]); e.target.value = ""; }} />
             </div>
+            {settings.aiUrl && (
+              <div className="row">
+                <button style={{ flex: 1 }} disabled={estimating} onClick={() => mealRef.current && mealRef.current.click()}>
+                  <MIcon k="plate" size={13} /> Snap a meal
+                </button>
+                <button style={{ flex: 1 }} disabled={estimating} onClick={() => recipeRef.current && recipeRef.current.click()}>
+                  <MIcon k="book" size={13} /> Recipe photo
+                </button>
+                <input ref={mealRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { scanMeal(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+                <input ref={recipeRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return; compressImage(f, 1400, 0.85).then((img) => scanRecipe({ image: img })); }} />
+              </div>
+            )}
+            {settings.aiUrl && (
+              <div className="sub" style={{ marginTop: 4 }}>Snap a plate for a draft ingredient breakdown, photograph a cookbook page, or paste a recipe link in the box above — the coworker reads the macros.</div>
+            )}
             {labelNote && <div className="note">{labelNote}</div>}
             {receiptNote && <div className="note">{receiptNote}</div>}
             {receiptItems && (

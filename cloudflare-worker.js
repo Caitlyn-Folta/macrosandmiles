@@ -27,7 +27,13 @@
       sync code; enter the same Worker URL + code on your other device.
    Your data is stored in YOUR Cloudflare account's KV, keyed by a hash of
    the sync code — the code never leaves your devices except inside the
-   request that reads/writes your own data. */
+   request that reads/writes your own data.
+
+   Endpoints: POST / (food lookup), POST /receipt (grocery OCR),
+   POST /chat (Calorie Coworker), GET|PUT /sync (device sync),
+   POST /recipe ({url} or {image} -> per-serving macros),
+   POST /meal ({image} -> draft ingredient list). If you deployed an
+   earlier version, re-paste this whole file to add /recipe and /meal. */
 
 const MODEL = "claude-haiku-4-5";
 
@@ -177,6 +183,62 @@ const RECEIPT_SCHEMA = {
   },
 };
 
+const RECIPE_SYSTEM =
+  "You extract nutrition from a recipe (blog post text, JSON-LD, or a photographed " +
+  "cookbook/blog recipe card). Find the dish name, how many servings the recipe " +
+  "makes, and the nutrition PER SERVING: calories, protein grams, fiber grams. " +
+  "If the page/card lists a nutrition label, use its per-serving numbers directly. " +
+  "If it only gives totals, divide by the servings. If nutrition isn't stated, " +
+  "estimate it from the ingredient list and servings — set estimated:true when you " +
+  "had to estimate. Servings defaults to 1 if truly unknown. Numbers only, no ranges.";
+
+const RECIPE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["name", "servings", "cal", "protein", "fiber", "estimated"],
+  properties: {
+    name: { type: "string", description: "dish name, plain lowercase" },
+    servings: { type: "number", description: "servings the whole recipe makes" },
+    cal: { type: "integer", description: "calories per serving" },
+    protein: { type: "number", description: "protein grams per serving" },
+    fiber: { type: "number", description: "fiber grams per serving" },
+    estimated: { type: "boolean", description: "true if macros were estimated, not label-stated" },
+  },
+};
+
+const MEAL_SYSTEM =
+  "You look at a photo of a plated meal and produce a DRAFT ingredient breakdown a " +
+  "person can edit before logging. Name the dish, then list its visible components as " +
+  "separate ingredients (e.g. a burrito bowl -> cilantro-lime rice, black beans, " +
+  "grilled chicken, cheese, salsa, guac). For each, estimate the portion you SEE on " +
+  "the plate and its calories, protein grams, and fiber grams for that portion. Be " +
+  "realistic about restaurant/home portion sizes. These are estimates from a photo — " +
+  "the user will correct them. Plain lowercase names.";
+
+const MEAL_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["dish", "items"],
+  properties: {
+    dish: { type: "string", description: "what the meal is, e.g. 'burrito bowl with chicken'" },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["name", "amount", "cal", "protein", "fiber"],
+        properties: {
+          name: { type: "string" },
+          amount: { type: "string", description: "the portion you see, e.g. '1 cup', '3 oz'" },
+          cal: { type: "integer" },
+          protein: { type: "number" },
+          fiber: { type: "number" },
+        },
+      },
+    },
+  },
+};
+
 export default {
   async fetch(request, env) {
     const cors = {
@@ -258,6 +320,91 @@ export default {
         const parsed = JSON.parse(rdata.content[0].text);
         return json({ items: Array.isArray(parsed.items) ? parsed.items : [] });
       } catch { return json({ error: "model returned unparseable output" }, 502); }
+    }
+
+    /* ---- /recipe: a blog/cookbook recipe (URL or photo) -> per-serving macros ----
+       body { url } fetches and reads the page; body { image } (data URL) reads a
+       photographed recipe card with Claude vision. Returns per-SERVING nutrition. */
+    if (new URL(request.url).pathname.endsWith("/recipe")) {
+      if (request.method !== "POST") return json({ error: "POST { url } or { image }" }, 405);
+      if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY secret is not set on this Worker" }, 500);
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "body must be JSON" }, 400); }
+
+      let content;
+      if (body.url) {
+        let pageText = "";
+        try {
+          const site = await fetch(String(body.url), { headers: { "User-Agent": "Mozilla/5.0 (compatible; MacrosAndMiles/1.0)" } });
+          if (!site.ok) return json({ error: `couldn't fetch that page (HTTP ${site.status})` }, 502);
+          const html = await site.text();
+          /* prefer JSON-LD recipe blocks if present, else strip tags */
+          const ld = [...html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]).join("\n");
+          pageText = (ld + "\n" + html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&[a-z]+;/gi, " ").replace(/\s+/g, " ")).slice(0, 14000);
+        } catch (e) {
+          return json({ error: "couldn't reach that URL from the Worker" }, 502);
+        }
+        content = "Recipe page text (may include JSON-LD nutrition):\n" + pageText;
+      } else if (body.image) {
+        const m = String(body.image).match(/^data:(image\/[a-z.+-]+);base64,(.+)$/i);
+        if (!m) return json({ error: "image must be a data URL" }, 400);
+        content = [
+          { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } },
+          { type: "text", text: "This is a photographed recipe from a cookbook or blog. Read it." },
+        ];
+      } else {
+        return json({ error: "provide a url or an image" }, 400);
+      }
+
+      const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 1500,
+          system: RECIPE_SYSTEM,
+          output_config: { format: { type: "json_schema", schema: RECIPE_SCHEMA } },
+          messages: [{ role: "user", content }],
+        }),
+      });
+      if (!upstream.ok) {
+        const detail = await upstream.text().catch(() => "");
+        return json({ error: `Anthropic API ${upstream.status}`, detail: detail.slice(0, 300) }, 502);
+      }
+      const rdata = await upstream.json();
+      try { return json(JSON.parse(rdata.content[0].text)); }
+      catch { return json({ error: "model returned unparseable output" }, 502); }
+    }
+
+    /* ---- /meal: a photo of a plated meal -> draft ingredient list with macros ---- */
+    if (new URL(request.url).pathname.endsWith("/meal")) {
+      if (request.method !== "POST") return json({ error: "POST { image }" }, 405);
+      if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY secret is not set on this Worker" }, 500);
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "body must be JSON" }, 400); }
+      const m = String(body.image || "").match(/^data:(image\/[a-z.+-]+);base64,(.+)$/i);
+      if (!m) return json({ error: "image must be a data URL" }, 400);
+      const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 1500,
+          system: MEAL_SYSTEM,
+          output_config: { format: { type: "json_schema", schema: MEAL_SCHEMA } },
+          messages: [{ role: "user", content: [
+            { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } },
+            { type: "text", text: "Identify this meal and break it into its component ingredients with per-portion nutrition." },
+          ] }],
+        }),
+      });
+      if (!upstream.ok) {
+        const detail = await upstream.text().catch(() => "");
+        return json({ error: `Anthropic API ${upstream.status}`, detail: detail.slice(0, 300) }, 502);
+      }
+      const rdata = await upstream.json();
+      try { return json(JSON.parse(rdata.content[0].text)); }
+      catch { return json({ error: "model returned unparseable output" }, 502); }
     }
 
     /* ---- /chat: one model turn of the conversational tracker ---- */
