@@ -30,10 +30,11 @@
    request that reads/writes your own data.
 
    Endpoints: POST / (food lookup), POST /receipt (grocery OCR),
-   POST /chat (Calorie Coworker), GET|PUT /sync (device sync),
-   POST /recipe ({url} or {image} -> per-serving macros),
-   POST /meal ({image} -> draft ingredient list). If you deployed an
-   earlier version, re-paste this whole file to add /recipe and /meal. */
+   POST /label ({image} -> full per-serving macros from a Nutrition Facts
+   photo), POST /chat (Calorie Coworker, incl. save_food),
+   GET|PUT /sync (device sync), POST /recipe ({url} or {image} ->
+   per-serving macros), POST /meal ({image} -> draft ingredient list).
+   If you deployed an earlier version, re-paste this whole file. */
 
 const MODEL = "claude-haiku-4-5";
 
@@ -93,6 +94,10 @@ const CHAT_SYSTEM =
   "confirm before logging. Never guess which items they mean.\n" +
   "- Fix mistakes with edit_food_entry / delete_food_entry (one edit or delete per message). " +
   "Record weigh-ins with log_weight.\n" +
+  "- When you pin down a specific PACKAGED or BRANDED food the user is likely to have again " +
+  "(a protein shake, a bar, a brand of yogurt) — especially if a lookup got it wrong — offer " +
+  "to remember it, and on a yes call save_food with its per-serving numbers so future lookups " +
+  "and typing the name just work. You can log_food and save_food in the same turn.\n" +
   "- Questions like 'what have I had' or 'how much is left' — answer from the state, no tools.\n" +
   "- Keep replies to one to three short sentences. Never invent foods the user didn't mention.";
 
@@ -144,6 +149,21 @@ const CHAT_TOOLS = [
       properties: { weight: { type: "number" } },
     },
   },
+  {
+    name: "save_food",
+    description: "Save a packaged/branded food to the user's personal food database with its PER-SERVING nutrition, so future lookups and typing its name resolve instantly. Use for foods they'll have again — not one-off restaurant meals.",
+    input_schema: {
+      type: "object",
+      required: ["name", "cal"],
+      properties: {
+        name: { type: "string", description: "the name they'd type, lowercase, e.g. 'core power vanilla protein shake'" },
+        cal: { type: "integer", description: "calories per serving" },
+        protein: { type: "number", description: "protein grams per serving" },
+        fiber: { type: "number", description: "dietary fiber grams per serving" },
+        grams: { type: "number", description: "serving size in grams or mL, if known" },
+      },
+    },
+  },
 ];
 
 /* ---- receipt mode: photo a grocery receipt, pre-load your food database ----
@@ -180,6 +200,32 @@ const RECEIPT_SCHEMA = {
         },
       },
     },
+  },
+};
+
+const LABEL_SYSTEM =
+  "You read a photo of a packaged food's Nutrition Facts panel (often on a curved " +
+  "bottle, bag, or box, sometimes at an angle or glare). Extract, PER SERVING: " +
+  "calories, protein grams, total fat grams, total carbohydrate grams, dietary fiber " +
+  "grams, and the serving size in grams (or milliliters if it's a drink). Also give a " +
+  "short lowercase food name from the brand/product text on the package (e.g. 'core " +
+  "power vanilla protein shake'). If a value is genuinely not on the panel, use null — " +
+  "but read carefully first; protein and fiber are almost always listed. Set liquid " +
+  "true only for drinks measured in mL/fl oz.";
+
+const LABEL_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["name", "cal", "protein", "fiber", "grams", "liquid"],
+  properties: {
+    name: { type: "string", description: "product name, plain lowercase" },
+    cal: { type: ["integer", "null"], description: "calories per serving" },
+    protein: { type: ["number", "null"], description: "protein grams per serving" },
+    fat: { type: ["number", "null"], description: "total fat grams per serving" },
+    carbs: { type: ["number", "null"], description: "total carbohydrate grams per serving" },
+    fiber: { type: ["number", "null"], description: "dietary fiber grams per serving" },
+    grams: { type: ["number", "null"], description: "serving size in grams or mL" },
+    liquid: { type: "boolean", description: "true if the serving is measured in mL/fl oz" },
   },
 };
 
@@ -320,6 +366,38 @@ export default {
         const parsed = JSON.parse(rdata.content[0].text);
         return json({ items: Array.isArray(parsed.items) ? parsed.items : [] });
       } catch { return json({ error: "model returned unparseable output" }, 502); }
+    }
+
+    /* ---- /label: a nutrition-facts photo -> all per-serving macros (vision) ----
+       Far more reliable than on-device OCR for curved/shiny/angled labels. */
+    if (new URL(request.url).pathname.endsWith("/label")) {
+      if (request.method !== "POST") return json({ error: "POST { image }" }, 405);
+      if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY secret is not set on this Worker" }, 500);
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "body must be JSON" }, 400); }
+      const m = String(body.image || "").match(/^data:(image\/[a-z.+-]+);base64,(.+)$/i);
+      if (!m) return json({ error: "image must be a data URL" }, 400);
+      const upstream = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 800,
+          system: LABEL_SYSTEM,
+          output_config: { format: { type: "json_schema", schema: LABEL_SCHEMA } },
+          messages: [{ role: "user", content: [
+            { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } },
+            { type: "text", text: "Read this Nutrition Facts panel." },
+          ] }],
+        }),
+      });
+      if (!upstream.ok) {
+        const detail = await upstream.text().catch(() => "");
+        return json({ error: `Anthropic API ${upstream.status}`, detail: detail.slice(0, 300) }, 502);
+      }
+      const rdata = await upstream.json();
+      try { return json(JSON.parse(rdata.content[0].text)); }
+      catch { return json({ error: "model returned unparseable output" }, 502); }
     }
 
     /* ---- /recipe: a blog/cookbook recipe (URL or photo) -> per-serving macros ----

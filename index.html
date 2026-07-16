@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v52";
+const APP_VERSION = "mm-v53";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -3212,30 +3212,51 @@ function Streakhouse() {
     else if (desc.trim() && !calInput) estimate();
   };
 
-  /* ---------- custom foods: nutrition label scan + manual entry ---------- */
+  /* ---------- custom foods: nutrition label scan + manual entry ----------
+     Prefers the Worker's vision /label (reads curved/shiny/angled panels far
+     better than on-device OCR); falls back to OCR when there's no Worker. */
   const scanLabel = async (file) => {
     if (!file) return;
     setLabelBusy(true); setLabelNote("");
+    const put = (name, cal, p, f, g, liquid, note) => {
+      setLabelForm({
+        name: name || "",
+        cal: cal != null ? String(cal) : "",
+        p: p != null ? String(p) : "",
+        f: f != null ? String(f) : "",
+        g: g != null ? String(g) : "",
+        liquid: !!liquid, logToday: true, saveDb: true,
+      });
+      setLabelNote(note);
+    };
     try {
       const dataUrl = await compressImage(file, 1400, 0.9);
+      if (settings.aiUrl) {
+        try {
+          const res = await fetch(settings.aiUrl + "/label", {
+            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: dataUrl }),
+          });
+          if (res.status === 404 || res.status === 405) throw new Error("no-endpoint");
+          const d = await res.json();
+          if (!res.ok) throw new Error(d.error || `label HTTP ${res.status}`);
+          const found = ["cal", "protein", "fiber", "grams"].filter((k) => d[k] != null).length;
+          put(d.name, d.cal, d.protein, d.fiber, d.grams, d.liquid,
+            found >= 2 ? `Read ${found}/4 from the label. Check the numbers, then add — and it'll be saved for next time.`
+              : "That panel was hard to read. Fill in what's missing, then add.");
+          setLabelBusy(false);
+          return;
+        } catch (e) {
+          if (e.message !== "no-endpoint") throw e;
+          /* old Worker without /label — fall through to on-device OCR */
+        }
+      }
       const r = parseNutritionLabel(await ocrImage(dataUrl));
-      setLabelForm({
-        name: "",
-        cal: r.cal != null ? String(r.cal) : "",
-        p: r.p != null ? String(r.p) : "",
-        f: r.f != null ? String(r.f) : "",
-        g: r.g != null ? String(r.g) : "",
-        liquid: r.liquid,
-        logToday: true,
-        saveDb: true,
-      });
       const found = ["cal", "p", "f", "g"].filter((k) => r[k] != null).length;
-      setLabelNote(found
-        ? `Read ${found}/4 fields off the label. Name it, check the numbers, add.`
-        : "Couldn't read numbers off that photo. Try a straighter, closer shot — or type them in below.");
+      put("", r.cal, r.p, r.f, r.g, r.liquid, found
+        ? `Read ${found}/4 off the label. Name it, check the numbers, add.${settings.aiUrl ? "" : " (Set up the AI Worker in the plan tab for far better label reading.)"}`
+        : "Couldn't read numbers off that photo. Try a straighter shot — or type them in below.");
     } catch (e) {
-      setLabelForm({ name: "", cal: "", p: "", f: "", g: "", liquid: false, logToday: true, saveDb: true });
-      setLabelNote(`Scan failed (${e.message}). Type the label values in below.`);
+      put("", null, null, null, null, false, `Scan failed (${e.message}). Type the label values in below.`);
     }
     setLabelBusy(false);
   };
@@ -3320,6 +3341,19 @@ function Streakhouse() {
   const deleteCustomFood = (name) => {
     const next = customFoods.filter((x) => x.k[0] !== name);
     setCustomFoods(next); customStore(next);
+  };
+  /* one place to remember a food so future lookups/typing resolve it. Upserts
+     by name; ml vs g decided by the liquid flag. Returns the saved key. */
+  const saveCustomFood = ({ name, cal, p = 0, f = 0, g, liquid, ft }) => {
+    const key = String(name || "").trim().toLowerCase().slice(0, 50);
+    if (!key || isNaN(parseInt(cal, 10))) return null;
+    const entry = { k: [key], c: Math.max(0, Math.round(cal)), p: Math.max(0, Math.round(p || 0)), f: Math.max(0, Math.round(f || 0)) };
+    const gv = parseFloat(g);
+    if (!isNaN(gv) && gv > 0) { if (liquid) { entry.ml = gv; entry.liquid = true; } else entry.g = gv; }
+    if (ft) entry.ft = ft;
+    const next = [...customFoods.filter((x) => x.k[0] !== key), entry];
+    setCustomFoods(next); customStore(next);
+    return key;
   };
 
   /* ---------- recipe intake: a blog/cookbook recipe URL or photo -> per-serving
@@ -3516,7 +3550,8 @@ function Streakhouse() {
       }
       let mutated = logs.length > 0; /* day state is stale after a write — one change per message */
       for (const t of others) {
-        if (mutated && t.name !== "log_weight") { result(t, "Only one edit or delete per message — ask again for the next change.", true); continue; }
+        /* log_weight and save_food don't touch the day, so they're never gated */
+        if (mutated && t.name !== "log_weight" && t.name !== "save_food") { result(t, "Only one edit or delete per message — ask again for the next change.", true); continue; }
         if (t.name === "edit_food_entry" || t.name === "delete_food_entry") {
           const q = normalizeFood(String(t.input.match || ""));
           const hit = day.entries.find((e) => normalizeFood(e.name).includes(q) || (q && q.includes(normalizeFood(e.name))));
@@ -3539,6 +3574,10 @@ function Streakhouse() {
         } else if (t.name === "log_weight") {
           const ok = await saveWeight(String(t.input.weight));
           result(t, ok ? { ok: true, weight: t.input.weight } : "that doesn't look like a valid weight", !ok);
+        } else if (t.name === "save_food") {
+          /* remembering a food never counts as the day's one mutation */
+          const key = saveCustomFood({ name: t.input.name, cal: t.input.cal, p: t.input.protein, f: t.input.fiber, g: t.input.grams });
+          result(t, key ? { ok: true, saved: key, cal: Math.round(t.input.cal) || 0 } : "needs at least a name and calories", !key);
         } else {
           result(t, `unknown tool ${t.name}`, true);
         }
@@ -3825,6 +3864,7 @@ function Streakhouse() {
                         : a.name === "delete_food_entry" ? `✕ removed "${a.input.match}"`
                         : a.name === "edit_food_entry" ? `✎ updated "${a.input.match}"`
                         : a.name === "log_weight" ? `✓ weigh-in ${a.input.weight}`
+                        : a.name === "save_food" ? `☆ saved "${a.input.name}" to your foods`
                         : a.name}
                     </div>
                   ))}
@@ -4090,6 +4130,10 @@ function Streakhouse() {
                   <div className={`estitem ${estFreebie(it) ? "freebierow" : ""}`} key={it.id}>
                     <div className="row" style={{ marginTop: 0 }}>
                       <input value={it.name} onChange={(e) => setEstimateItem(it.id, "name", e.target.value)} aria-label={`Name for ${it.raw}`} />
+                      <button className="tinybtn" title="Save to my foods for next time"
+                        aria-label={`Save ${it.name} to my foods`}
+                        disabled={!it.name.trim() || isNaN(parseInt(it.cal, 10))}
+                        onClick={() => { const k = saveCustomFood({ name: it.name, cal: parseInt(it.cal, 10), p: parseInt(it.p, 10) || 0, f: parseInt(it.f, 10) || 0, ft: it.ft }); if (k) flash(`Saved "${k}" — future lookups and typing will find it`); }}>☆</button>
                       <button className="tinybtn" title="Remove item" aria-label={`Remove ${it.raw}`} onClick={() => removeEstimateItem(it.id)}>✕</button>
                     </div>
                     <div className="row" style={{ marginTop: 6 }}>
@@ -4115,11 +4159,14 @@ function Streakhouse() {
                   </button>
                   <button onClick={() => { setEstimateItems(null); setEstimateNote(""); }}>Cancel</button>
                 </div>
-                {settings.aiUrl && estimateItems.some((x) => x.cal === "") && (
+                {settings.aiUrl && (
                   <div className="row">
-                    <button className="ember" style={{ width: "100%" }} onClick={() => chatHandoff(desc)}><MIcon k="chat" size={13} /> Ask the chat below instead</button>
+                    <button className="ember" style={{ width: "100%" }} onClick={() => chatHandoff(desc.trim() || estimateItems.map((x) => x.name).join(", "))}>
+                      <MIcon k="chat" size={13} /> {estimateItems.some((x) => x.cal === "") ? "Ask the Coworker instead" : "Numbers look off? Ask the Coworker"}
+                    </button>
                   </div>
                 )}
+                {settings.aiUrl && <div className="estnote">The Coworker can also remember a food — say "save that" and it'll be here next time. Or tap ☆ on any row.</div>}
               </div>
             )}
 
