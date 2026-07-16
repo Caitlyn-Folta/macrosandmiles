@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v51";
+const APP_VERSION = "mm-v52";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -2416,10 +2416,10 @@ function Streakhouse() {
   const [syncShowCode, setSyncShowCode] = useState(false);
   const [chatMsgs, setChatMsgs] = useState([]);
   const [openCat, setOpenCat] = useState(null);
-  const [portion, setPortion] = useState(1);
-  const [portionLabel, setPortionLabel] = useState("1");
-  const [portionCustom, setPortionCustom] = useState(false);
-  const [portionInput, setPortionInput] = useState("");
+  const [portionSheet, setPortionSheet] = useState(null); /* staple item being portion-sized */
+  const [sheetFrac, setSheetFrac] = useState(1);
+  const [sheetLabel, setSheetLabel] = useState("1");
+  const [sheetInput, setSheetInput] = useState("");
   const [openMeals, setOpenMeals] = useState(() => [nowSlot()]);
   /* null = follow the clock (default); a value = the user pinned the next log
      to a specific window. Effective target is logSlot || nowSlot(). */
@@ -2911,21 +2911,17 @@ function Streakhouse() {
     setDesc(""); setCalInput(""); setProtInput(""); setFibInput(""); setEstimateNote(""); setEstimateItems(null);
   };
   const addEntry = (name, cal, p = 0, f = 0) => addEntries([{ name, cal, p, f }]);
-  /* pantry portions: log a fraction of a serving, math done for you */
+  /* pantry portions: tap logs one serving; press-and-hold an item opens a
+     portion sheet for exactly that food \u2014 math done for you */
   const PORTIONS = [
     { f: 0.25, l: "\u00bc" }, { f: 1 / 3, l: "\u2153" }, { f: 0.5, l: "\u00bd" },
     { f: 2 / 3, l: "\u2154" }, { f: 0.75, l: "\u00be" }, { f: 1, l: "1" },
     { f: 1.5, l: "1\u00bd" }, { f: 2, l: "2" },
   ];
-  const setCustomPortion = (str) => {
-    setPortionInput(str);
-    const f = parsePortion(str);
-    if (f != null) { setPortion(f); setPortionLabel(prettyPortion(str)); }
-  };
-  const logStaple = async (d) => {
-    const base = portion === 1
+  const logStapleWith = async (d, frac, label) => {
+    const base = frac === 1
       ? { name: d.name, cal: d.cal, p: d.p, f: d.f }
-      : { name: `${portionLabel} \u00d7 ${d.name}`, cal: Math.round(d.cal * portion), p: Math.round(d.p * portion), f: Math.round(d.f * portion) };
+      : { name: `${label} \u00d7 ${d.name}`, cal: Math.round(d.cal * frac), p: Math.round(d.p * frac), f: Math.round(d.f * frac) };
     const ent = freebify(base, d.ft || null, null);
     if (pastDay) {
       /* time machine open: the tap lands on the viewed day, not today */
@@ -2934,9 +2930,41 @@ function Streakhouse() {
       flash(`${ent.name} added to ${shortDate(pastDay.date)}`);
     } else {
       await addEntries([ent]);
+      if (frac !== 1) flash(`${ent.name} \u00b7 ${ent.cal} cal`);
     }
-    if (portion !== 1) { setPortion(1); setPortionLabel("1"); setPortionCustom(false); setPortionInput(""); }
   };
+  const logStaple = (d) => logStapleWith(d, 1, "1");
+
+  /* ---------- per-item portion sheet (press & hold a pantry tile) ---------- */
+  const openPortionSheet = (d) => { setPortionSheet(d); setSheetFrac(1); setSheetLabel("1"); setSheetInput(""); };
+  const closePortionSheet = () => setPortionSheet(null);
+  const sheetPick = (f, l) => { setSheetFrac(f); setSheetLabel(l); setSheetInput(""); };
+  const sheetCustom = (str) => {
+    setSheetInput(str);
+    const f = parsePortion(str);
+    if (f != null) { setSheetFrac(f); setSheetLabel(prettyPortion(str)); }
+  };
+  const sheetLog = async () => {
+    const d = portionSheet;
+    closePortionSheet();
+    await logStapleWith(d, sheetFrac, sheetLabel);
+  };
+  /* long-press detection: fires the sheet at 420ms of stillness; a normal tap
+     (or a scroll that wanders >12px) never triggers it */
+  const lpTimer = useRef(null); const lpFired = useRef(false); const lpStart = useRef(null);
+  const lpDown = (d, e) => {
+    lpFired.current = false;
+    lpStart.current = { x: e.clientX, y: e.clientY };
+    clearTimeout(lpTimer.current);
+    lpTimer.current = setTimeout(() => { lpFired.current = true; openPortionSheet(d); }, 420);
+  };
+  const lpMove = (e) => {
+    if (lpStart.current && (Math.abs(e.clientX - lpStart.current.x) > 12 || Math.abs(e.clientY - lpStart.current.y) > 12)) {
+      clearTimeout(lpTimer.current); lpStart.current = null;
+    }
+  };
+  const lpEnd = () => { clearTimeout(lpTimer.current); lpStart.current = null; };
+  const stapleTap = (d) => { if (lpFired.current) { lpFired.current = false; return; } logStaple(d); };
 
   /* Bites, Licks & Tastes: one running 30-cal-per-tap entry for the day */
   const BLT_NAME = "bites, licks & tastes";
@@ -3826,22 +3854,7 @@ function Streakhouse() {
             <h2>The Pantry</h2>
             <div className="sub">{pastDay
               ? `Logging into ${shortDate(pastDay.date)} — every tap lands on that day.`
-              : "The frequent fliers — one tap logs a serving. Tap a shelf to open it."}</div>
-            <div className="portionrow" role="group" aria-label="Portion of a serving">
-              <span className="qdesc" style={{ whiteSpace: "nowrap", marginRight: 2 }}>Portion</span>
-              {PORTIONS.map((pt) => (
-                <button key={pt.l} className={`portionchip ${!portionCustom && portion === pt.f ? "on" : ""}`}
-                  aria-pressed={!portionCustom && portion === pt.f}
-                  onClick={() => { setPortion(pt.f); setPortionLabel(pt.l); setPortionCustom(false); setPortionInput(""); }}>{pt.l}</button>
-              ))}
-              <button className={`portionchip ${portionCustom ? "on" : ""}`} aria-label="Custom portion" onClick={() => setPortionCustom(!portionCustom)}>{"\u2026"}</button>
-            </div>
-            {portionCustom && (
-              <div className="row" style={{ marginTop: 6 }}>
-                <input value={portionInput} onChange={(e) => setCustomPortion(e.target.value)} placeholder="any amount: 0.4, 40%, or 2/3" aria-label="Custom portion amount" inputMode="decimal" />
-              </div>
-            )}
-            {portion !== 1 && <div className="sub" style={{ marginTop: 6 }}>Next tap logs <b className="num">{portionLabel}</b> of a serving {"\u2014"} calories and macros scale automatically, then it resets to a full serving.</div>}
+              : "Tap logs one serving · press & hold any item to size the portion (½, 40%, 2 servings…)."}</div>
             {STAPLE_CATS.map((cat) => {
               const catCount = pantryDay.entries.filter((en) => cat.items.some((d) => d.name === en.name)).length;
               const open = openCat === cat.id;
@@ -3857,8 +3870,11 @@ function Streakhouse() {
                         const n = pantryDay.entries.filter((en) => en.name === d.name).length;
                         const fb = !!(d.ft && freebieOn(d.ft)); /* live state, not just the tag */
                         return (
-                          <button key={d.id} className={`pourbtn ${fb ? "freebie" : ""}`} disabled={pastDay ? false : day.closed} onClick={() => logStaple(d)}
-                            aria-label={`Log ${d.name}, ${fb ? "0 calories (fiber freebie)" : `${d.cal} calories`}${d.sv ? `, serving ${d.sv}` : ""}`}>
+                          <button key={d.id} className={`pourbtn ${fb ? "freebie" : ""}`} disabled={pastDay ? false : day.closed}
+                            onClick={() => stapleTap(d)}
+                            onPointerDown={(e) => lpDown(d, e)} onPointerMove={lpMove} onPointerUp={lpEnd} onPointerCancel={lpEnd} onPointerLeave={lpEnd}
+                            onContextMenu={(e) => { e.preventDefault(); openPortionSheet(d); }}
+                            aria-label={`Log ${d.name}, ${fb ? "0 calories (fiber freebie)" : `${d.cal} calories`}${d.sv ? `, serving ${d.sv}` : ""}. Press and hold for portion sizes.`}>
                             {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
                             <StapleIcon kind={d.id} />
                             <span className="pl">{d.label}</span>
@@ -4947,7 +4963,7 @@ function Streakhouse() {
         button.cathdr.mealhdr.on { background:#9B6DF2; }
         button.cathdr:active { transform:translate(2px,2px); box-shadow:0 0 0 #1E1A1C; }
         .pours { display:grid; grid-template-columns:repeat(3,1fr); gap:12px 10px; margin-top:12px; }
-        button.pourbtn { position:relative; background:#fff; border:2.5px solid #1E1A1C; border-radius:14px; box-shadow:3px 3px 0 #1E1A1C; padding:7px 2px 5px; display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; font-family:inherit; }
+        button.pourbtn { position:relative; background:#fff; border:2.5px solid #1E1A1C; border-radius:14px; box-shadow:3px 3px 0 #1E1A1C; padding:7px 2px 5px; display:flex; flex-direction:column; align-items:center; gap:1px; cursor:pointer; font-family:inherit; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
         button.pourbtn:hover { transform:translate(-1px,-1px); box-shadow:4px 4px 0 #1E1A1C; }
         button.pourbtn:active { transform:translate(3px,3px); box-shadow:0 0 0 #1E1A1C; }
         button.pourbtn:disabled { opacity:.45; }
@@ -5132,6 +5148,49 @@ function Streakhouse() {
           </div>
         </div>
       )}
+
+      {/* ---------- per-item portion sheet (press & hold a pantry tile) ---------- */}
+      {portionSheet && (() => {
+        const d = portionSheet;
+        const fb = !!(d.ft && freebieOn(d.ft));
+        const cal = fb ? 0 : Math.round(d.cal * sheetFrac);
+        const prot = Math.round(d.p * sheetFrac);
+        const fib = Math.round(d.f * sheetFrac);
+        const gm = parseInt(d.sv, 10);
+        return (
+          <div className="sheet" onClick={closePortionSheet}>
+            <div className="sheet-inner" onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <StapleIcon kind={d.id} size={44} />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 16 }}>{d.label}</div>
+                  <div className="sub num" style={{ margin: 0 }}>1 serving = {d.sv || `${d.cal} cal`}{fb ? " · fiber freebie" : ""}</div>
+                </div>
+              </div>
+              <div className="qname" style={{ marginTop: 12 }}>How much?</div>
+              <div className="portionrow" role="group" aria-label={`Portion of ${d.name}`}>
+                {PORTIONS.map((pt) => (
+                  <button key={pt.l} className={`portionchip ${!sheetInput && sheetFrac === pt.f ? "on" : ""}`}
+                    aria-pressed={!sheetInput && sheetFrac === pt.f} onClick={() => sheetPick(pt.f, pt.l)}>{pt.l}</button>
+                ))}
+              </div>
+              <div className="row" style={{ marginTop: 8 }}>
+                <input value={sheetInput} onChange={(e) => sheetCustom(e.target.value)} placeholder="or any amount: 0.4, 40%, 2/3" aria-label="Custom portion amount" inputMode="decimal" />
+              </div>
+              <div className="xpline" style={{ marginTop: 10 }}>
+                <span><b>{sheetLabel} × {d.label}</b>{gm ? <span className="sub" style={{ margin: 0 }}> · ≈{Math.round(gm * sheetFrac)}g</span> : null}</span>
+                <span className="num">{cal} cal · {prot}g prot · {fib}g fiber</span>
+              </div>
+              <div className="row" style={{ marginTop: 12 }}>
+                <button className="pri" style={{ flex: 1 }} onClick={sheetLog}>
+                  Log {sheetFrac === 1 ? "1 serving" : sheetFrac > 1 ? `${sheetLabel} servings` : `${sheetLabel} of a serving`} · {cal} cal
+                </button>
+                <button onClick={closePortionSheet}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ---------- Close the Day sheet ---------- */}
       {closeFlow && (
