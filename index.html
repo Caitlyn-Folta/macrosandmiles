@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v54";
+const APP_VERSION = "mm-v55";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -2743,12 +2743,17 @@ function Streakhouse() {
     return !!rec && rec.c > 0 && rec.s >= settings.stepGoal && onPlanCal(ds, history, settings, null, null);
   }, [history, settings]);
 
+  /* A flagged light day is streak-SAFE: it counts toward the streak and never
+     breaks it (you just didn't finish logging). It stays out of dayQual so it's
+     not treated as a "perfect day" in the trends/analytics. */
+  const streakSafe = useCallback((ds) => dayQual(ds) || isLightRec(ds, history[ds]), [dayQual, history, settings]);
+
   const streak = useMemo(() => {
     let count = todayQualifies ? 1 : 0;
     let cursor = shiftDate(today, -1);
-    while (dayQual(cursor)) { count++; cursor = shiftDate(cursor, -1); }
+    while (streakSafe(cursor)) { count++; cursor = shiftDate(cursor, -1); }
     return count;
-  }, [dayQual, todayQualifies, today]);
+  }, [streakSafe, todayQualifies, today]);
 
   const adherence = useMemo(() => {
     let sum = 0;
@@ -3776,7 +3781,7 @@ function Streakhouse() {
       prof.perfect = (prof.perfect || 0) + 1;
       if (prof.perfect % 7 === 0 && (prof.tokens || 0) < 3) { prof.tokens = (prof.tokens || 0) + 1; tokenEarned = true; }
     }
-    const newStreak = (liveOnPlan && stepsHit && d.entries.length > 0 ? 1 : 0) + (() => { let c = 0, cur = yesterday; while (dayQual(cur)) { c++; cur = shiftDate(cur, -1); } return c; })();
+    const newStreak = (liveOnPlan && stepsHit && d.entries.length > 0 ? 1 : 0) + (() => { let c = 0, cur = yesterday; while (streakSafe(cur)) { c++; cur = shiftDate(cur, -1); } return c; })();
     if (newStreak > (prof.bestStreak || 0)) prof.bestStreak = newStreak;
 
     const beforeLevel = levelFromXp(profile.xp);
@@ -3980,7 +3985,7 @@ function Streakhouse() {
             {chain.map((d) => (
               <div key={d.ds} role="button" tabIndex={0}
                 className={`link ${d.shield ? "shield" : d.ok ? "ok" : ""} ${d.logged ? "logged" : ""} ${d.light ? "light" : ""} ${d.isToday ? "today" : ""} ${pastDay && pastDay.date === d.ds ? "viewing" : ""}`}
-                title={d.ds + (d.shield ? " (shielded)" : d.light ? " (light day)" : "") + " — tap to edit"}
+                title={d.ds + (d.shield ? " (shielded)" : d.light ? " (light day — still counts for your streak)" : "") + " — tap to edit"}
                 aria-label={`Open ${d.ds}`}
                 onClick={() => openPastDay(d.ds)}
                 onKeyDown={(e) => e.key === "Enter" && openPastDay(d.ds)} />
@@ -4811,10 +4816,10 @@ function Streakhouse() {
 
           <div className="card">
             <h2><span>⚖︎ Light days</span></h2>
-            <div className="sub">A day you logged but clearly didn't finish (a couple entries, then life happened) drags your averages down. Flag those and, optionally, leave them out of the trends.</div>
+            <div className="sub">A day you logged but clearly didn't finish (a couple entries, then life happened) drags your averages down. Flag those — they still count for your streak, they just don't have to skew the trends.</div>
             <label className="qdesc" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, cursor: "pointer" }}>
               <input type="checkbox" style={{ width: "auto", marginTop: 2 }} checked={!!settings.flagPartial} onChange={() => setSetting({ flagPartial: !settings.flagPartial })} aria-label="Flag partially-logged days" />
-              <span><b>Flag partially-logged days</b> — any past day under the calorie floor gets a striped marker on the streak chain.</span>
+              <span><b>Flag partially-logged days</b> — any past day under the calorie floor gets a striped marker on the chain and <b>never breaks your streak</b> (a day you forgot to finish logging shouldn't cost you the run).</span>
             </label>
             {settings.flagPartial && (
               <React.Fragment>
@@ -4825,7 +4830,7 @@ function Streakhouse() {
                 </div>
                 <label className="qdesc" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, cursor: "pointer" }}>
                   <input type="checkbox" style={{ width: "auto", marginTop: 2 }} checked={!!settings.excludePartial} onChange={() => setSetting({ excludePartial: !settings.excludePartial })} aria-label="Exclude light days from trends" />
-                  <span><b>Don't count light days in trends & averages</b> — they drop out of the calorie trend, weekly averages, and the week-in-review (steps still count).</span>
+                  <span><b>Keep their calories out of trends & averages</b> — they drop out of the calorie trend, weekly averages, and the week-in-review, so the data stays honest (steps and the streak still count them).</span>
                 </label>
               </React.Fragment>
             )}
