@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v53";
+const APP_VERSION = "mm-v54";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -1139,11 +1139,23 @@ function parseNutritionLabel(text) {
 }
 
 /* ---------- week in review: shown Sunday night and Monday morning ---------- */
+/* A "light day" logged something but came in under the threshold — usually a
+   day the user forgot to finish logging, which drags averages down. Detection
+   is opt-in (settings.flagPartial); excluding them from the data is a second
+   opt-in (settings.excludePartial). today is never light (still in progress). */
+const partialThreshOf = (settings) => Math.max(1, settings.partialThreshold || 1000);
+const isLightDay = (ds, rec, settings, todayStr) =>
+  !!settings.flagPartial && ds !== todayStr && !!rec && (rec.e || 0) > 0 && (rec.c || 0) > 0 && rec.c < partialThreshOf(settings);
+const droppedFromData = (ds, rec, settings, todayStr) =>
+  !!settings.excludePartial && isLightDay(ds, rec, settings, todayStr);
+
 function buildWeekReview(mon, history, weights, settings) {
-  let logged = 0, cal = 0, steps = 0, onPlanDays = 0, stepDays = 0, protDays = 0, fibDays = 0;
+  let logged = 0, cal = 0, steps = 0, onPlanDays = 0, stepDays = 0, protDays = 0, fibDays = 0, light = 0;
   for (let i = 0; i < 7; i++) {
     const ds = shiftDate(mon, i);
     const rec = history[ds];
+    if (isLightDay(ds, rec, settings, null)) light++;
+    if (droppedFromData(ds, rec, settings, null)) continue; /* light day excluded from the week's stats */
     if (rec && rec.e > 0) {
       logged++; cal += rec.c;
       if (onPlanCal(ds, history, settings, null, null)) onPlanDays++;
@@ -1161,7 +1173,7 @@ function buildWeekReview(mon, history, weights, settings) {
     onPlanDays >= 5 ? "That was a prosecution-grade week. Same goals, or raise the stakes?" :
     onPlanDays >= 3 ? "A solid week with room in the margins. Keep the goals or tune them below." :
     "The data came in bumpy — which is still data. Fit the goals to real life, then win the week.";
-  return { mon, sun, logged, avgCal: logged ? Math.round(cal / logged) : 0, steps, onPlanDays, stepDays, protDays, fibDays, wDelta, verdict };
+  return { mon, sun, logged, avgCal: logged ? Math.round(cal / logged) : 0, steps, onPlanDays, stepDays, protDays, fibDays, wDelta, verdict, light };
 }
 
 /* Entry ids must be unique — two adds in the same millisecond would share a
@@ -2402,11 +2414,13 @@ function Streakhouse() {
   const [stepInput, setStepInput] = useState("");
   const [showHealthHelp, setShowHealthHelp] = useState(false);
   const [weightInput, setWeightInput] = useState("");
+  const [briefWeight, setBriefWeight] = useState("");
   const [calDraft, setCalDraft] = useState("");
   const [stepDraft, setStepDraft] = useState("");
   const [protDraft, setProtDraft] = useState("");
   const [fibDraft, setFibDraft] = useState("");
   const [boostDraft, setBoostDraft] = useState("0");
+  const [partialDraft, setPartialDraft] = useState("1000");
   const [aiDraft, setAiDraft] = useState("");
   const [aiNote, setAiNote] = useState("");
   const [syncInfo, setSyncInfo] = useState(() => syncCfg());
@@ -2627,6 +2641,16 @@ function Streakhouse() {
     const next = Object.assign({}, settings, { [key]: !settings[key] });
     setSettings(next); return sset(K.settings, next);
   };
+  /* generic single-field settings write, used by the weigh-in + light-day cards */
+  const setSetting = (patch) => { const next = Object.assign({}, settings, patch); setSettings(next); return sset(K.settings, next); };
+  const weighMode = settings.weighMode || "close";
+  const weightLoggedToday = weights.some((w) => w.d === today);
+  /* the close-day flow asks for weight only when the user logs at close AND
+     hasn't already weighed in today */
+  const askWeightAtClose = weighMode === "close" && !weightLoggedToday;
+  /* light-day (partial log) predicates for the live component */
+  const isLightRec = (ds, rec) => isLightDay(ds, rec, settings, today);
+  const dropLight = (ds, rec) => droppedFromData(ds, rec, settings, today);
 
   /* retro bulk-apply: a separate, deliberate action. Matches by EXACT food key
      (portion prefixes like "½ × " stripped) against tagged custom/FOOD_DB
@@ -2779,6 +2803,7 @@ function Streakhouse() {
         ok: ds === today ? todayQualifies : dayQual(ds),
         shield: !!(rec && rec.shield),
         logged: ds === today ? day.entries.length > 0 || day.steps > 0 : !!rec,
+        light: isLightRec(ds, rec),
         isToday: ds === today,
       });
     }
@@ -2791,10 +2816,11 @@ function Streakhouse() {
     for (let i = 13; i >= 0; i--) {
       const ds = shiftDate(today, -i);
       const rec = ds === today ? { c: total } : history[ds];
-      out.push({ d: shortDate(ds), cal: rec ? rec.c : 0 });
+      /* excluded light days become a gap so they don't dent the trend line */
+      out.push({ d: shortDate(ds), cal: dropLight(ds, rec) ? null : (rec ? rec.c : 0), light: isLightRec(ds, rec) });
     }
     return out;
-  }, [history, today, total]);
+  }, [history, today, total, settings]);
 
   const stepChart = useMemo(() => {
     const out = [];
@@ -2817,6 +2843,7 @@ function Streakhouse() {
         const ds = shiftDate(mon, i);
         if (ds > today) break;
         const rec = ds === today ? { c: total, s: day.steps, e: day.entries.length } : history[ds];
+        if (dropLight(ds, rec)) { if (rec) steps += rec.s; continue; } /* light day: steps still count, calories/plan don't */
         if (rec && rec.e > 0) { loggedDays++; cal += rec.c; }
         if (rec) steps += rec.s;
         if (rec && rec.e > 0 && onPlanCal(ds, history, settings, today, total) && rec.s >= settings.stepGoal) onPlanDays++;
@@ -2849,10 +2876,10 @@ function Streakhouse() {
     for (let i = 27; i >= 0; i--) {
       const ds = shiftDate(today, -i);
       const rec = ds === today ? { c: total } : history[ds];
-      out.push({ d: shortDate(ds), cal: (rec && rec.c) || null, w: wmap[ds] != null ? wmap[ds] : null });
+      out.push({ d: shortDate(ds), cal: dropLight(ds, rec) ? null : ((rec && rec.c) || null), w: wmap[ds] != null ? wmap[ds] : null });
     }
     return out;
-  }, [history, weights, today, total]);
+  }, [history, weights, today, total, settings]);
 
   /* ---------- actions ---------- */
   const awardXp = async (amount) => {
@@ -3192,6 +3219,10 @@ function Streakhouse() {
   const estLogCal = (it) => (estFreebie(it) ? 0 : estCal(it));
   const addEstimateItems = async () => {
     if (!readyEstimateItems.length) return;
+    /* remember any row marked "save" (recipes default on) at its PER-SERVING
+       numbers, so future lookups resolve it even if you logged 2 servings */
+    let saved = 0;
+    for (const it of readyEstimateItems) if (it.save) { if (saveCustomFood({ name: it.name, cal: parseInt(it.cal, 10), p: parseInt(it.p, 10) || 0, f: parseInt(it.f, 10) || 0, ft: it.ft })) saved++; }
     await addEntries(readyEstimateItems.map((it) => {
       const frac = estFrac(it);
       const base = {
@@ -3202,6 +3233,7 @@ function Streakhouse() {
       };
       return freebify(base, it.ft, it.raw);
     }));
+    if (saved) flash(`${saved === 1 ? "Recipe" : `${saved} foods`} saved to your database for next time`);
   };
 
   const submitFood = () => {
@@ -3375,7 +3407,7 @@ function Streakhouse() {
       setEstimateItems([{
         id: 0, raw: data.name || "recipe", name: String(data.name || "recipe").toLowerCase().slice(0, 50),
         cal: String(Math.round(data.cal)), p: String(Math.round(data.protein || 0)), f: String(Math.round(data.fiber || 0)),
-        ft: null, portion: "",
+        ft: null, portion: "", save: true, /* a recipe is worth remembering — saved by default, opt out below */
         note: `per serving${srv ? ` · recipe makes ${srv}` : ""}${data.estimated ? " · macros estimated" : " · from the recipe's label"}`,
       }]);
       setEstimateNote(`Per-serving macros ready. Had more than one serving? Put the number in the portion box, then add.`);
@@ -3431,6 +3463,7 @@ function Streakhouse() {
     setCalDraft(String(settings.calTarget)); setStepDraft(String(settings.stepGoal));
     setProtDraft(String(settings.proteinGoal)); setFibDraft(String(settings.fiberGoal));
     setBoostDraft(String(settings.weekendShift || 0));
+    setPartialDraft(String(settings.partialThreshold || 1000));
     setAiDraft(settings.aiUrl || "");
   };
 
@@ -3946,8 +3979,8 @@ function Streakhouse() {
           <div className="chain" aria-label="Last 14 days — tap a day to view or edit it">
             {chain.map((d) => (
               <div key={d.ds} role="button" tabIndex={0}
-                className={`link ${d.shield ? "shield" : d.ok ? "ok" : ""} ${d.logged ? "logged" : ""} ${d.isToday ? "today" : ""} ${pastDay && pastDay.date === d.ds ? "viewing" : ""}`}
-                title={d.ds + (d.shield ? " (shielded)" : "") + " — tap to edit"}
+                className={`link ${d.shield ? "shield" : d.ok ? "ok" : ""} ${d.logged ? "logged" : ""} ${d.light ? "light" : ""} ${d.isToday ? "today" : ""} ${pastDay && pastDay.date === d.ds ? "viewing" : ""}`}
+                title={d.ds + (d.shield ? " (shielded)" : d.light ? " (light day)" : "") + " — tap to edit"}
                 aria-label={`Open ${d.ds}`}
                 onClick={() => openPastDay(d.ds)}
                 onKeyDown={(e) => e.key === "Enter" && openPastDay(d.ds)} />
@@ -4143,6 +4176,12 @@ function Streakhouse() {
                       <input value={it.portion} onChange={(e) => setEstimateItem(it.id, "portion", e.target.value)} placeholder="× 1" aria-label={`Portion of serving for ${it.raw}`} style={{ maxWidth: 62 }} title="Portion eaten: 0.5, 50% or 1/2" />
                     </div>
                     <div className="estnote">"{it.raw}" · {it.note}</div>
+                    {it.name.trim() && !isNaN(parseInt(it.cal, 10)) && (
+                      <label className="estnote" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                        <input type="checkbox" style={{ width: "auto" }} checked={!!it.save} onChange={(e) => setEstimateItem(it.id, "save", e.target.checked)} aria-label={`Remember ${it.name} for next time`} />
+                        Remember this for next time (saves to your foods)
+                      </label>
+                    )}
                     {estFreebie(it) && <div className="estnote" style={{ color: "#3E8E2A" }}><FreebieLeaf size={12} /> fiber freebie (tier {it.ft}) — logs at 0 cal; protein & fiber log as-is</div>}
                     {it.portion.trim() !== "" && (parsePortion(it.portion) == null
                       ? <div className="estnote">portion? try 0.5, 50% or 1/2 — using the full serving for now</div>
@@ -4755,6 +4794,44 @@ function Streakhouse() {
           </div>
 
           <div className="card">
+            <h2><span><MIcon k="scale" /> Weigh-in schedule</span></h2>
+            <div className="sub">When do you step on the scale? Weight is most consistent taken at the same time each day.</div>
+            {[
+              { m: "morning", t: "First thing in the morning", d: "A weigh-in prompt appears with your morning briefing, and the day-close skips the weight step." },
+              { m: "close", t: "At day-close", d: "Asked as the last step when you close the day (unless you already logged one)." },
+              { m: "off", t: "Whenever / no prompt", d: "Never prompted; log from the Vitals card whenever you like." },
+            ].map((o) => (
+              <label key={o.m} className="qdesc" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, cursor: "pointer" }}>
+                <input type="radio" name="weighmode" style={{ width: "auto", marginTop: 3 }} checked={weighMode === o.m} onChange={() => setSetting({ weighMode: o.m })} aria-label={o.t} />
+                <span><b>{o.t}</b><br /><span style={{ color: "#5C5254" }}>{o.d}</span></span>
+              </label>
+            ))}
+            {weighMode === "morning" && <div className="sub" style={{ marginTop: 10 }}>The briefing fires on the first app open each day — that's your reminder. (Browsers can't send true push notifications from a web app, so the in-app prompt is the nudge.)</div>}
+          </div>
+
+          <div className="card">
+            <h2><span>⚖︎ Light days</span></h2>
+            <div className="sub">A day you logged but clearly didn't finish (a couple entries, then life happened) drags your averages down. Flag those and, optionally, leave them out of the trends.</div>
+            <label className="qdesc" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, cursor: "pointer" }}>
+              <input type="checkbox" style={{ width: "auto", marginTop: 2 }} checked={!!settings.flagPartial} onChange={() => setSetting({ flagPartial: !settings.flagPartial })} aria-label="Flag partially-logged days" />
+              <span><b>Flag partially-logged days</b> — any past day under the calorie floor gets a striped marker on the streak chain.</span>
+            </label>
+            {settings.flagPartial && (
+              <React.Fragment>
+                <div className="row" style={{ marginTop: 8, alignItems: "center" }}>
+                  <span className="qdesc" style={{ whiteSpace: "nowrap" }}>Calorie floor</span>
+                  <input inputMode="numeric" style={{ maxWidth: 110 }} value={partialDraft} onChange={(e) => setPartialDraft(e.target.value)} onBlur={() => { const n = parseInt(partialDraft, 10); setSetting({ partialThreshold: !isNaN(n) && n > 0 ? n : 1000 }); }} placeholder="1000" aria-label="Light day calorie floor" />
+                  <span className="qdesc">cal · a logged day under this is "light"</span>
+                </div>
+                <label className="qdesc" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, cursor: "pointer" }}>
+                  <input type="checkbox" style={{ width: "auto", marginTop: 2 }} checked={!!settings.excludePartial} onChange={() => setSetting({ excludePartial: !settings.excludePartial })} aria-label="Exclude light days from trends" />
+                  <span><b>Don't count light days in trends & averages</b> — they drop out of the calorie trend, weekly averages, and the week-in-review (steps still count).</span>
+                </label>
+              </React.Fragment>
+            )}
+          </div>
+
+          <div className="card">
             <h2><span><FreebieLeaf size={15} /> Fiber freebies</span></h2>
             <div className="sub">
               Tagged raw vegetables can log at 0 calories. The call is made at the moment of logging — flipping these later never
@@ -4937,6 +5014,7 @@ function Streakhouse() {
         .link.ok { background:#FF5FA2; border-color:#1E1A1C; }
         .link.shield { background:#7ED957; border-color:#1E1A1C; }
         .link.logged:not(.ok):not(.shield) { background:#EBDFC9; border-color:#D9CBAF; }
+        .link.light:not(.ok):not(.shield) { background:repeating-linear-gradient(45deg,#F3E4C4,#F3E4C4 2px,#EBDFC9 2px,#EBDFC9 4px); border-color:#D9A441; border-style:dashed; }
         .link.today { outline:2.5px solid #7C48D8; outline-offset:2px; }
         .card { background:#FFFDF8; border:2.5px solid #1E1A1C; border-radius:18px; padding:16px; margin-bottom:16px; box-shadow:5px 5px 0 #52B52E; }
         .card:nth-of-type(even) { box-shadow:5px 5px 0 #FF5FA2; }
@@ -5141,7 +5219,8 @@ function Streakhouse() {
             <h3>{weeklyReview.verdict}</h3>
             <div style={{ marginTop: 6 }}>
               <div className="xpline"><span>Days logged</span><span className="num">{weeklyReview.logged}/7</span></div>
-              <div className="xpline"><span>Avg daily calories</span><span className="num">{weeklyReview.avgCal.toLocaleString()}</span></div>
+              <div className="xpline"><span>Avg daily calories{weeklyReview.light > 0 && settings.excludePartial ? " (light days excluded)" : ""}</span><span className="num">{weeklyReview.avgCal.toLocaleString()}</span></div>
+              {weeklyReview.light > 0 && <div className="xpline"><span>Light days{settings.excludePartial ? " — left out of the stats" : ""}</span><span className="num">{weeklyReview.light}</span></div>}
               <div className="xpline"><span>Days on plan</span><span className="num">{weeklyReview.onPlanDays}</span></div>
               <div className="xpline"><span>Total steps</span><span className="num">{weeklyReview.steps.toLocaleString()} · goal hit {weeklyReview.stepDays}×</span></div>
               <div className="xpline"><span><ProteinIcon size={12} /> protein / <FiberIcon size={12} /> fiber days</span><span className="num">{weeklyReview.protDays} / {weeklyReview.fibDays}</span></div>
@@ -5191,6 +5270,19 @@ function Streakhouse() {
             <div className="sub" style={{ marginTop: 10 }}>{briefing.tone}</div>
             {briefing.extra && <div className="sub" style={{ marginTop: 6 }}>{briefing.extra}</div>}
             <div className="evidence">{briefing.mission}</div>
+            {weighMode === "morning" && !weightLoggedToday && (
+              <div className="estitem" style={{ marginTop: 12 }}>
+                <div className="qname"><MIcon k="scale" size={14} /> Morning weigh-in</div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <input inputMode="decimal" value={briefWeight} onChange={(e) => setBriefWeight(e.target.value)} placeholder="today's weight" aria-label="Morning weight" />
+                  <button className="pri" disabled={!briefWeight.trim()} onClick={async () => { const ok = await saveWeight(briefWeight); if (ok) { setBriefWeight(""); flash("Logged. First thing done."); } }}>Log</button>
+                </div>
+                <div className="estnote">Set to log first thing — you won't be asked again at day-close.</div>
+              </div>
+            )}
+            {weighMode === "morning" && weightLoggedToday && (
+              <div className="estnote" style={{ marginTop: 10 }}><MIcon k="scale" size={12} /> Weigh-in already logged today. Nice.</div>
+            )}
             <div className="row"><button className="pri" style={{ width: "100%" }} onClick={() => setBriefing(null)}>Court is in session →</button></div>
           </div>
         </div>
@@ -5245,7 +5337,7 @@ function Streakhouse() {
           <div className="sheet-inner" onClick={(e) => e.stopPropagation()}>
             {closeFlow.step === 1 && (
               <React.Fragment>
-                <div className="stepno">Close the day · 1 of 3</div>
+                <div className="stepno">Close the day · 1 of {askWeightAtClose ? 3 : 2}</div>
                 <h3>Anything missing from the food log?</h3>
                 <div style={{ marginTop: 8 }}>
                   {day.entries.length === 0 && <div className="empty">Nothing logged yet — add at least one item to close.</div>}
@@ -5265,19 +5357,21 @@ function Streakhouse() {
             )}
             {closeFlow.step === 2 && (
               <React.Fragment>
-                <div className="stepno">Close the day · 2 of 3</div>
+                <div className="stepno">Close the day · 2 of {askWeightAtClose ? 3 : 2}</div>
                 <h3>Final step count</h3>
-                <div className="sub">Glance at the watch. What's the number?</div>
+                <div className="sub">Glance at the watch. What's the number?{!askWeightAtClose && weightLoggedToday ? " Weigh-in's already in from this morning." : !askWeightAtClose && weighMode !== "close" ? " (Weigh-ins are set to the morning — no weight step here.)" : ""}</div>
                 <div className="row">
                   <input inputMode="numeric" value={closeFlow.steps} onChange={(e) => setCloseFlow(Object.assign({}, closeFlow, { steps: e.target.value }))} placeholder="Steps" />
                 </div>
                 <div className="row">
                   <button onClick={() => setCloseFlow(Object.assign({}, closeFlow, { step: 1 }))}>← Back</button>
-                  <button className="pri" style={{ flex: 1 }} onClick={() => setCloseFlow(Object.assign({}, closeFlow, { step: 3 }))}>Next →</button>
+                  {askWeightAtClose
+                    ? <button className="pri" style={{ flex: 1 }} onClick={() => setCloseFlow(Object.assign({}, closeFlow, { step: 3 }))}>Next →</button>
+                    : <button className="ink" style={{ flex: 1 }} onClick={finishClose}>Reveal my numbers</button>}
                 </div>
               </React.Fragment>
             )}
-            {closeFlow.step === 3 && (
+            {closeFlow.step === 3 && askWeightAtClose && (
               <React.Fragment>
                 <div className="stepno">Close the day · 3 of 3</div>
                 <h3>Weigh-in? (optional, +10 XP)</h3>
