@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v55";
+const APP_VERSION = "mm-v56";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -2616,8 +2616,12 @@ function Streakhouse() {
     /* what's left of the pool, re-split over the remaining days by the same weights */
     const spentBefore = rows.reduce((a, r) => a + (r.isPast ? r.actual : 0), 0);
     const remW = rows.reduce((a, r, i) => a + (r.isPast ? 0 : w[i]), 0);
+    rows.forEach((r, i) => {
+      /* adjusted share for today + future days; past days keep their history */
+      r.adj = r.isPast || remW <= 0 ? r.planned : Math.max(0, Math.round(((pool - spentBefore) * w[i]) / remW));
+    });
     const ti = rows.findIndex((r) => r.isToday);
-    const suggestToday = ti >= 0 && remW > 0 ? Math.max(0, Math.round(((pool - spentBefore) * w[ti]) / remW)) : 0;
+    const suggestToday = ti >= 0 ? rows[ti].adj : 0;
     return { rows, suggestToday };
   }, [poolDay, today, pool, heavyDays, history, total]);
 
@@ -4113,17 +4117,29 @@ function Streakhouse() {
                     <div className="xpline" key={r.ds}>
                       <span>{r.name}{r.isToday ? " · today" : ""}{r.heavy ? <React.Fragment>{" "}<MIcon k="flame" size={11} /></React.Fragment> : ""}</span>
                       <span className="num">
-                        {(r.isPast || r.isToday) && (
-                          <span style={{ color: r.actual > r.planned ? "#FF5FA2" : "#52B52E" }}>{r.actual.toLocaleString()} / </span>
+                        {r.isPast && (
+                          <React.Fragment>
+                            <span style={{ color: r.actual > r.planned ? "#FF5FA2" : "#52B52E" }}>{r.actual.toLocaleString()} / </span>
+                            {r.planned.toLocaleString()} planned
+                          </React.Fragment>
                         )}
-                        {r.planned.toLocaleString()} planned
+                        {r.isToday && (r.adj - r.actual >= 0 ? (
+                          <React.Fragment>
+                            {r.actual.toLocaleString()} eaten {"·"} <b style={{ color: "#52B52E" }}>{(r.adj - r.actual).toLocaleString()} left</b>
+                          </React.Fragment>
+                        ) : (
+                          <React.Fragment>
+                            {r.actual.toLocaleString()} eaten {"·"} <b style={{ color: "#FF5FA2" }}>{(r.actual - r.adj).toLocaleString()} over</b>
+                          </React.Fragment>
+                        ))}
+                        {!r.isPast && !r.isToday && <React.Fragment>~{r.adj.toLocaleString()} planned</React.Fragment>}
                       </span>
                     </div>
                   ))}
                 </div>
                 {remaining > 0 && (
                   <div className="sub num" style={{ color: "#7C48D8", marginTop: 8 }}>
-                    Adjusted for the weekend so far: stay near ~{weekendPlan.suggestToday.toLocaleString()} today and the plan survives contact with dinner.
+                    Adjusted for the weekend so far: today{"'"}s share is ~{weekendPlan.suggestToday.toLocaleString()}, and the {"“"}left{"”"} number up there already did the math for you.
                   </div>
                 )}
               </React.Fragment>
