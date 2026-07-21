@@ -43,6 +43,7 @@ const FOOD_DB = [
   { k: ["jam", "jelly"], c: 50, p: 0, f: 0, g: 20 },
   { k: ["cheese"], c: 110, p: 7, f: 0, g: 28 },
   { k: ["egg"], c: 75, p: 6, f: 0, g: 50 },
+  { k: ["egg whites", "egg white", "liquid egg whites"], c: 25, p: 5, f: 0, g: 46 },
   { k: ["chicken breast", "grilled chicken"], c: 280, p: 52, f: 0, g: 170 },
   { k: ["chicken thigh", "chicken thighs"], c: 150, p: 21, f: 0, g: 85 },
   { k: ["94% lean beef", "lean ground beef", "lean beef"], c: 180, p: 26, f: 0, g: 113 },

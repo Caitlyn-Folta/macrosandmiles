@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v56";
+const APP_VERSION = "mm-v57";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -1464,11 +1464,11 @@ const STAPLE_CATS = [
       { id: "pork", name: "pork tenderloin", label: "Pork tender.", cal: 135, p: 26, f: 0 , sv: "112g · 4 oz" },
       { id: "turkeyslice", name: "deli turkey slice", label: "Deli turkey", cal: 30, p: 5, f: 0 , sv: "28g · 1 slice" },
       { id: "salami", name: "salami slice", label: "Salami", cal: 40, p: 2, f: 0 , sv: "12g · 1 slice" },
-      { id: "chomps", name: "chomps stick", label: "Chomps", cal: 100, p: 10, f: 0 , sv: "32g · 1 stick" },
       { id: "egg", name: "egg", label: "Egg", cal: 75, p: 6, f: 0 , sv: "50g · 1 large" },
+      { id: "eggwhites", name: "egg whites", label: "Egg whites", cal: 25, p: 5, f: 0 , sv: "46g · 3 tbsp" },
       { id: "milk", name: "fairlife lowfat milk", label: "Milk", cal: 110, p: 13, f: 0 , sv: "240g · 1 cup" },
+      { id: "corepower", name: "core power vanilla protein shake", label: "Core Power", cal: 170, p: 26, f: 0 , sv: "414ml · 1 bottle" },
       { id: "proteinpowder", name: "protein powder scoop", label: "Protein scoop", cal: 110, p: 20, f: 0 , sv: "31g · 1 scoop" },
-      { id: "builtbar", name: "built puff chocolate chunk bar", label: "Built puff", cal: 130, p: 17, f: 4 , sv: "40g · 1 bar" },
     ],
   },
   {
@@ -1521,6 +1521,8 @@ const STAPLE_CATS = [
   {
     id: "snacks", label: "Snack",
     items: [
+      { id: "chomps", name: "chomps stick", label: "Chomps", cal: 100, p: 10, f: 0 , sv: "32g · 1 stick" },
+      { id: "builtbar", name: "built puff chocolate chunk bar", label: "Built puff", cal: 130, p: 17, f: 4 , sv: "40g · 1 bar" },
       { id: "popchips", name: "pop chips", label: "Pop chips", cal: 130, p: 1, f: 1 , sv: "28g · ~20 chips" },
       { id: "pistachio", name: "1/4 cup pistachios", label: "Pistachios", cal: 170, p: 6, f: 3 , sv: "30g · ¼ cup" },
       { id: "pitabites", name: "pita bite crackers", label: "Pita bites", cal: 130, p: 3, f: 1 , sv: "28g · ~11 pieces" },
@@ -1552,6 +1554,7 @@ const STAPLE_CATS = [
       { id: "maplesyrup", name: "maple syrup", label: "Maple syrup", cal: 52, p: 0, f: 0 , sv: "20g · 1 tbsp" },
       { id: "honey", name: "honey", label: "Honey", cal: 64, p: 0, f: 0 , sv: "21g · 1 tbsp" },
       { id: "ketchup", name: "ketchup", label: "Ketchup", cal: 20, p: 0, f: 0 , sv: "17g · 1 tbsp" },
+      { id: "butter", name: "butter", label: "Butter", cal: 100, p: 0, f: 0 , sv: "14g · 1 tbsp" },
     ],
   },
 ];
@@ -1575,6 +1578,25 @@ function StapleIcon({ kind, size = 38 }) {
         <path d="M15 15 H 31" stroke={INK_ICON} strokeWidth="2" />
         <rect x="15" y="22" width="16" height="8" fill="#6EC1FF" stroke={INK_ICON} strokeWidth="1.8" />
         <path d="M23 9 L 23 15" stroke={INK_ICON} strokeWidth="1.6" />
+      </g>
+    ),
+    eggwhites: (
+      <g>
+        {sh("M15 15 L 23 9 L 31 15 V 38 H 15 Z")}
+        <path d="M15 15 L 23 9 L 31 15 V 38 H 15 Z" fill="#FFFDF8" {...S} />
+        <path d="M15 15 H 31" stroke={INK_ICON} strokeWidth="2" />
+        <ellipse cx="23" cy="27" rx="4.4" ry="5.4" fill="#FFF" stroke={INK_ICON} strokeWidth="1.8" />
+        <ellipse cx="21.5" cy="24.5" rx="1.3" ry="1.8" fill="#F4F6F9" />
+        <path d="M23 9 L 23 15" stroke={INK_ICON} strokeWidth="1.6" />
+      </g>
+    ),
+    corepower: (
+      <g>
+        {sh("M18 14 h 10 v 4 c 2 2 3 4 3 7 v 10 a 3 3 0 0 1 -3 3 h -10 a 3 3 0 0 1 -3 -3 v -10 c 0 -3 1 -5 3 -7 Z")}
+        <path d="M18 14 h 10 v 4 c 2 2 3 4 3 7 v 10 a 3 3 0 0 1 -3 3 h -10 a 3 3 0 0 1 -3 -3 v -10 c 0 -3 1 -5 3 -7 Z" fill="#FFFDF8" {...S} />
+        <rect x="18" y="9" width="10" height="5" rx="1.5" fill="#5C3A21" {...S} strokeWidth="2" />
+        <rect x="15" y="25" width="16" height="8" fill="#FF5FA2" stroke={INK_ICON} strokeWidth="1.8" />
+        <path d="M18 29 h 10" stroke="#FFF" strokeWidth="2" strokeLinecap="round" />
       </g>
     ),
     cottage: (
@@ -2057,6 +2079,14 @@ function StapleIcon({ kind, size = 38 }) {
         <path d="M21 8 h 4 v 8 c 4 2 6 5 6 10 v 8 a 3 3 0 0 1 -3 3 h -10 a 3 3 0 0 1 -3 -3 v -8 c 0 -5 2 -8 6 -10 Z" fill="#C9D957" {...S} />
         <path d="M16 27 c 0 -4 1.5 -6.5 5 -8.5" fill="none" stroke="#E8F0A0" strokeWidth="2.4" strokeLinecap="round" />
         <rect x="20" y="6" width="6" height="4" rx="1.5" fill="#5C3A21" {...S} strokeWidth="2" />
+      </g>
+    ),
+    butter: (
+      <g>
+        {sh("M12 22 h 22 v 8 a 3 3 0 0 1 -3 3 h -16 a 3 3 0 0 1 -3 -3 Z")}
+        <path d="M12 22 h 22 v 8 a 3 3 0 0 1 -3 3 h -16 a 3 3 0 0 1 -3 -3 Z" fill="#FFE28A" {...S} />
+        <path d="M16 17 h 13 v 5 h -13 Z" fill="#FFD34D" {...S} strokeWidth="2" />
+        <path d="M15 26 h 6 M 25 27 h 4" stroke="#FFF3C4" strokeWidth="2.2" strokeLinecap="round" />
       </g>
     ),
     avospray: (
@@ -3653,6 +3683,7 @@ function Streakhouse() {
         weight_unit: "lb",
       };
       let baseTotal = total;
+      let loggedFood = false;
       for (let round = 0; round < 5; round++) {
         const res = await fetch(settings.aiUrl + "/chat", {
           method: "POST",
@@ -3667,9 +3698,19 @@ function Streakhouse() {
         if (data.stop_reason !== "tool_use") break;
         const toolUses = data.content.filter((b) => b.type === "tool_use");
         const results = await execChatTools(toolUses, baseTotal);
+        if (!day.closed && toolUses.some((t) => t.name === "log_food")) loggedFood = true;
         baseTotal += toolUses.filter((t) => t.name === "log_food").reduce((a, t) => a + (Math.round(t.input.cal) || 0), 0);
         msgs = [...msgs, { role: "user", content: results }];
         setChatMsgs(msgs); persistChat(msgs);
+      }
+      /* food made it into the log -> sweep the thread so the next question
+         starts fresh; keep only the Coworker's final word as the receipt */
+      if (loggedFood) {
+        const lastA = [...msgs].reverse().find((m) => m.role === "assistant" && Array.isArray(m.content) && m.content.some((b) => b.type === "text" && b.text.trim()));
+        const lastText = lastA ? lastA.content.filter((b) => b.type === "text").map((b) => b.text).join(" ").trim() : "";
+        msgs = lastText ? [{ role: "assistant", content: [{ type: "text", text: lastText }] }] : [];
+        setChatMsgs(msgs); persistChat(msgs);
+        flash("Logged — chat swept for the next one.");
       }
     } catch (e) {
       msgs = [...msgs, { role: "assistant", content: [{ type: "text", text: `(connection hiccup — ${e.message}. Nothing was lost; try that again.)` }] }];
