@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v57";
+const APP_VERSION = "mm-v58";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -1332,17 +1332,18 @@ function MIcon({ k, size = 15 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ verticalAlign: "-2px" }}>{art[k]}</svg>;
 }
 
-/* ---------- Pours: one-tap drink logging, each a sticker illustration ---------- */
+/* ---------- Pours: one-tap drink logging, each a sticker illustration.
+   Lives on its own Pantry shelf (drink: true picks DrinkIcon over StapleIcon) ---------- */
 const POURS = [
-  { id: "espmartini", name: "espresso martini", label: "Esp. martini", cal: 240 },
-  { id: "skinnymarg", name: "skinny margarita", label: "Skinny marg", cal: 140 },
-  { id: "wine", name: "wine", label: "Wine", cal: 125 },
-  { id: "champagne", name: "champagne", label: "Champagne", cal: 95 },
-  { id: "marg", name: "margarita", label: "Marg", cal: 250 },
-  { id: "martini", name: "martini", label: "Martini", cal: 200 },
-  { id: "oldfash", name: "old fashioned", label: "Old fash", cal: 200 },
-  { id: "seltzer", name: "seltzer", label: "Seltzer", cal: 100 },
-  { id: "shot", name: "shot", label: "Shot", cal: 100 },
+  { id: "espmartini", name: "espresso martini", label: "Esp. martini", cal: 240, p: 0, f: 0, sv: "130ml · 1 coupe", drink: true },
+  { id: "skinnymarg", name: "skinny margarita", label: "Skinny marg", cal: 140, p: 0, f: 0, sv: "200ml · 1 glass", drink: true },
+  { id: "wine", name: "wine", label: "Wine", cal: 125, p: 0, f: 0, sv: "150ml · 1 glass", drink: true },
+  { id: "champagne", name: "champagne", label: "Champagne", cal: 95, p: 0, f: 0, sv: "150ml · 1 flute", drink: true },
+  { id: "marg", name: "margarita", label: "Marg", cal: 250, p: 0, f: 0, sv: "240ml · 1 glass", drink: true },
+  { id: "martini", name: "martini", label: "Martini", cal: 200, p: 0, f: 0, sv: "120ml · 1 glass", drink: true },
+  { id: "oldfash", name: "old fashioned", label: "Old fash", cal: 200, p: 0, f: 0, sv: "120ml · 1 rocks", drink: true },
+  { id: "seltzer", name: "seltzer", label: "Seltzer", cal: 100, p: 0, f: 0, sv: "355ml · 1 can", drink: true },
+  { id: "shot", name: "shot", label: "Shot", cal: 100, p: 0, f: 0, sv: "44ml · 1 shot", drink: true },
 ];
 
 function DrinkIcon({ kind, size = 38 }) {
@@ -1556,6 +1557,11 @@ const STAPLE_CATS = [
       { id: "ketchup", name: "ketchup", label: "Ketchup", cal: 20, p: 0, f: 0 , sv: "17g · 1 tbsp" },
       { id: "butter", name: "butter", label: "Butter", cal: 100, p: 0, f: 0 , sv: "14g · 1 tbsp" },
     ],
+  },
+  {
+    /* not everyday has pours — collapsed like every other shelf */
+    id: "pours", label: "Pour",
+    items: POURS,
   },
 ];
 
@@ -3999,7 +4005,7 @@ function Streakhouse() {
                             onContextMenu={(e) => { e.preventDefault(); openPortionSheet(d); }}
                             aria-label={`Log ${d.name}, ${fb ? "0 calories (fiber freebie)" : `${d.cal} calories`}${d.sv ? `, serving ${d.sv}` : ""}. Press and hold for portion sizes.`}>
                             {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
-                            <StapleIcon kind={d.id} />
+                            {d.drink ? <DrinkIcon kind={d.id} /> : <StapleIcon kind={d.id} />}
                             <span className="pl">{d.label}</span>
                             <span className="pc num">{fb ? "0 cal" : d.cal}</span>
                             {d.sv && <span className="ps num">{d.sv}</span>}
@@ -4472,24 +4478,6 @@ function Streakhouse() {
               <button className="ember" style={{ flex: 1, fontWeight: 800 }} disabled={day.closed} onClick={addBlt} aria-label="Log 30 calories of bites, licks and tastes">+30 cal</button>
               <div className="sub num" style={{ flex: 1, textAlign: "center", margin: 0 }}>{bltEntry ? `${bltEntry.cal} cal today` : "clean hands so far"}</div>
               {bltEntry && <button className="tinybtn" aria-label="Remove 30 bite calories" onClick={minusBlt}>−30</button>}
-            </div>
-          </div>
-
-          <div className="card">
-            <h2>Pours</h2>
-            <div className="sub">One tap logs the drink straight to today's count (and the weekend pool). The snack judge sees everything.</div>
-            <div className="pours">
-              {POURS.map((d) => {
-                const n = day.entries.filter((en) => en.name === d.name).length;
-                return (
-                  <button key={d.id} className="pourbtn" disabled={day.closed} onClick={() => addEntry(d.name, d.cal)} aria-label={`Log a ${d.name}, ${d.cal} calories`}>
-                    {n > 0 && <span className="pourbadge num" aria-label={`${n} logged today`}>{n}</span>}
-                    <DrinkIcon kind={d.id} />
-                    <span className="pl">{d.label}</span>
-                    <span className="pc num">{d.cal}</span>
-                  </button>
-                );
-              })}
             </div>
           </div>
 
@@ -5362,7 +5350,7 @@ function Streakhouse() {
           <div className="sheet" onClick={closePortionSheet}>
             <div className="sheet-inner" onClick={(e) => e.stopPropagation()}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <StapleIcon kind={d.id} size={44} />
+                {d.drink ? <DrinkIcon kind={d.id} size={44} /> : <StapleIcon kind={d.id} size={44} />}
                 <div>
                   <div style={{ fontWeight: 800, fontSize: 16 }}>{d.label}</div>
                   <div className="sub num" style={{ margin: 0 }}>1 serving = {d.sv || `${d.cal} cal`}{fb ? " · fiber freebie" : ""}</div>
@@ -5379,7 +5367,7 @@ function Streakhouse() {
                 <input value={sheetInput} onChange={(e) => sheetCustom(e.target.value)} placeholder="or any amount: 0.4, 40%, 2/3" aria-label="Custom portion amount" inputMode="decimal" />
               </div>
               <div className="xpline" style={{ marginTop: 10 }}>
-                <span><b>{sheetLabel} × {d.label}</b>{gm ? <span className="sub" style={{ margin: 0 }}> · ≈{Math.round(gm * sheetFrac)}g</span> : null}</span>
+                <span><b>{sheetLabel} × {d.label}</b>{gm ? <span className="sub" style={{ margin: 0 }}> · ≈{Math.round(gm * sheetFrac)}{d.sv && d.sv.includes("ml") ? "ml" : "g"}</span> : null}</span>
                 <span className="num">{cal} cal · {prot}g prot · {fib}g fiber</span>
               </div>
               <div className="row" style={{ marginTop: 12 }}>
