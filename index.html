@@ -147,7 +147,7 @@ function parseStepsText(txt) {
 }
 
 /* keep in lockstep with CACHE in sw.js — both bump on every release */
-const APP_VERSION = "mm-v58";
+const APP_VERSION = "mm-v59";
 
 const LEVEL_XP = [0, 0, 150, 400, 800, 1400];
 const xpForLevel = (n) => (n < LEVEL_XP.length ? LEVEL_XP[n] : LEVEL_XP[LEVEL_XP.length - 1] + (n - LEVEL_XP.length + 1) * 800);
@@ -1565,6 +1565,10 @@ const STAPLE_CATS = [
   },
 ];
 
+/* Every shelf a pantry item can live on, including the hyperfixation shelf.
+   "Obsessed" only renders in the pantry once something's on it. */
+const PANTRY_SHELVES = [...STAPLE_CATS.map((c) => ({ id: c.id, label: c.label })), { id: "obsessed", label: "Obsessed" }];
+
 function StapleIcon({ kind, size = 38 }) {
   const S = { stroke: INK_ICON, strokeWidth: 2.4, strokeLinejoin: "round" };
   const sh = (d) => <path d={d} transform="translate(2 2)" fill={INK_ICON} opacity=".9" />;
@@ -2189,8 +2193,17 @@ function StapleIcon({ kind, size = 38 }) {
         <path d="M19.5 28 c 1.2 -1.6 2.4 -1.6 3.5 0 c 1.1 1.6 2.3 1.6 3.5 0" fill="none" stroke="#E23D2E" strokeWidth="1.8" strokeLinecap="round" />
       </g>
     ),
+    /* fallback for user-added pantry items: a plate with a sparkle */
+    generic: (
+      <g>
+        {sh("M23 10 a 14 14 0 1 0 0.1 0 Z")}
+        <circle cx="23" cy="24" r="14" fill="#FFFDF8" {...S} />
+        <circle cx="23" cy="24" r="8" fill="#FBEBC8" stroke={INK_ICON} strokeWidth="1.8" />
+        <path d="M31.5 8 l 1.1 2.6 2.6 1.1 -2.6 1.1 -1.1 2.6 -1.1 -2.6 -2.6 -1.1 2.6 -1.1 Z" fill="#FFC93C" stroke={INK_ICON} strokeWidth="1.4" strokeLinejoin="round" />
+      </g>
+    ),
   };
-  return <svg width={size} height={size} viewBox="0 0 46 46" aria-hidden="true">{art[kind]}</svg>;
+  return <svg width={size} height={size} viewBox="0 0 46 46" aria-hidden="true">{art[kind] || art.generic}</svg>;
 }
 
 /* log grouping: same windows as the meal pips, evening catches the late stuff */
@@ -2431,7 +2444,10 @@ function Streakhouse() {
   const [suppExpand, setSuppExpand] = useState(false);
   const [pastDay, setPastDayState] = useState(null); /* {date, doc} — time machine */
   const [pastEdit, setPastEdit] = useState(null);
-  const [pastAdd, setPastAdd] = useState({ name: "", cal: "", p: "", f: "" });
+  const [pantryTab, setPantryTab] = useState("proteins"); /* shelf open in the Plan editor */
+  const [pantryEdit, setPantryEdit] = useState(null); /* {id, name, label, cal, p, f, sv, cat} */
+  const [pantryAdd, setPantryAdd] = useState({ name: "", cal: "", p: "", f: "", sv: "", cat: "obsessed" });
+  const [restoreArm, setRestoreArm] = useState(false);
   const [retroFrom, setRetroFrom] = useState("");
   const [retroTo, setRetroTo] = useState("");
   const [retroPreview, setRetroPreview] = useState(null);
@@ -2442,6 +2458,7 @@ function Streakhouse() {
   const [receiptNote, setReceiptNote] = useState("");
   const [receiptItems, setReceiptItems] = useState(null);
   const receiptRef = useRef(null);
+  const fridgeRef = useRef(null);
   const mealRef = useRef(null);
   const recipeRef = useRef(null);
   const [labelNote, setLabelNote] = useState("");
@@ -2683,6 +2700,69 @@ function Streakhouse() {
   };
   /* generic single-field settings write, used by the weigh-in + light-day cards */
   const setSetting = (patch) => { const next = Object.assign({}, settings, patch); setSettings(next); return sset(K.settings, next); };
+
+  /* ---------- customizable pantry: defaults + user mods = effective shelves.
+     Built-ins are never wiped — deletes/moves/edits live in settings.pantryMods
+     and "Restore default pantry" clears the lot. ---------- */
+  const pantryCats = useMemo(() => {
+    const m = settings.pantryMods || {};
+    const removed = new Set(m.removed || []);
+    const moved = m.moved || {};
+    const edits = m.edits || {};
+    const cats = PANTRY_SHELVES.map((c) => ({ id: c.id, label: c.label, items: [] }));
+    const byId = {}; cats.forEach((c) => { byId[c.id] = c; });
+    const place = (homeCat, d) => {
+      if (removed.has(d.id)) return;
+      const item = edits[d.id] ? Object.assign({}, d, edits[d.id]) : d;
+      (byId[moved[d.id]] || byId[homeCat] || byId.obsessed).items.push(item);
+    };
+    STAPLE_CATS.forEach((c) => c.items.forEach((d) => place(c.id, d)));
+    (m.custom || []).forEach((d) => place(d.cat, d));
+    return cats;
+  }, [settings.pantryMods]);
+  const curPantryMods = () => {
+    const m = settings.pantryMods || {};
+    return { removed: [...(m.removed || [])], moved: Object.assign({}, m.moved), edits: Object.assign({}, m.edits), custom: [...(m.custom || [])] };
+  };
+  const isCustomPantryItem = (id) => ((settings.pantryMods || {}).custom || []).some((x) => x.id === id);
+  const savePantryEdit = () => {
+    const d = pantryEdit; if (!d) return;
+    const cal = parseInt(d.cal, 10);
+    if (!d.name.trim() || isNaN(cal)) return;
+    const m = curPantryMods();
+    m.edits[d.id] = {
+      name: d.name.trim().toLowerCase(), label: (d.label.trim() || d.name.trim()).slice(0, 16),
+      cal: Math.max(0, cal), p: Math.max(0, parseInt(d.p, 10) || 0), f: Math.max(0, parseInt(d.f, 10) || 0),
+      sv: d.sv.trim(),
+    };
+    m.moved[d.id] = d.cat;
+    setPantryMods(m); setPantryEdit(null); flash("Pantry updated.");
+  };
+  const deletePantryItem = (id) => {
+    const m = curPantryMods();
+    if (isCustomPantryItem(id)) m.custom = m.custom.filter((x) => x.id !== id);
+    else if (!m.removed.includes(id)) m.removed.push(id);
+    delete m.moved[id]; delete m.edits[id];
+    setPantryMods(m); flash("Off the shelf. Restore defaults brings built-ins back.");
+  };
+  const addPantryItem = () => {
+    const cal = parseInt(pantryAdd.cal, 10);
+    const nm = pantryAdd.name.trim();
+    if (!nm || isNaN(cal)) return;
+    const m = curPantryMods();
+    m.custom.push({
+      id: "c" + Date.now(), cat: pantryAdd.cat || "obsessed",
+      name: nm.toLowerCase(), label: nm.slice(0, 16),
+      cal: Math.max(0, cal), p: Math.max(0, parseInt(pantryAdd.p, 10) || 0), f: Math.max(0, parseInt(pantryAdd.f, 10) || 0),
+      sv: pantryAdd.sv.trim(),
+    });
+    setPantryMods(m);
+    saveCustomFood({ name: nm, cal, p: parseInt(pantryAdd.p, 10) || 0, f: parseInt(pantryAdd.f, 10) || 0 });
+    setPantryAdd({ name: "", cal: "", p: "", f: "", sv: "", cat: pantryAdd.cat });
+    flash(`"${nm}" on the ${(PANTRY_SHELVES.find((s) => s.id === (pantryAdd.cat || "obsessed")) || {}).label} shelf — and in your food database.`);
+  };
+  const setPantryMods = (m) => setSetting({ pantryMods: m });
+  const restorePantry = () => { setSetting({ pantryMods: null }); setRestoreArm(false); setPantryEdit(null); flash("Factory pantry restored — moves, edits, and custom items cleared."); };
   const weighMode = settings.weighMode || "close";
   const weightLoggedToday = weights.some((w) => w.d === today);
   /* the close-day flow asks for weight only when the user logs at close AND
@@ -2937,6 +3017,24 @@ function Streakhouse() {
   };
 
   const addEntries = async (items) => {
+    /* time machine open: every lookup path (typed, estimate, label, meal,
+       recipe) lands on the viewed past day instead of today */
+    if (pastDay) {
+      const es = items.map((it) => {
+        const e = {
+          id: nextEntryId(), name: (it.name || "").trim() || "Food",
+          cal: Math.max(0, Math.round(it.cal)),
+          p: Math.max(0, Math.round(it.p || 0)), f: Math.max(0, Math.round(it.f || 0)),
+          hour: 12, m: Date.now(),
+        };
+        if (it.freebieApplied) { e.freebieApplied = true; e.freebieTier = it.freebieTier; e.ocal = Math.round(it.ocal || 0); }
+        return e;
+      });
+      await commitPastDay(Object.assign({}, pastDay.doc, { entries: [...pastDay.doc.entries, ...es] }));
+      flash(`${es.length === 1 ? es[0].name : `${es.length} items`} added to ${shortDate(pastDay.date)}`);
+      setDesc(""); setCalInput(""); setProtInput(""); setFibInput(""); setEstimateNote(""); setEstimateItems(null);
+      return;
+    }
     const hour = new Date().getHours();
     const es = items.map((it) => {
       const e = {
@@ -3084,17 +3182,6 @@ function Streakhouse() {
       sset(K.history, merged);
       return merged;
     });
-  };
-  const pastAddEntry = async () => {
-    const cal = parseInt(pastAdd.cal, 10);
-    if (!pastAdd.name.trim() || isNaN(cal)) return;
-    const e = {
-      id: nextEntryId(), name: pastAdd.name.trim(), cal: Math.max(0, cal),
-      p: Math.max(0, parseInt(pastAdd.p, 10) || 0), f: Math.max(0, parseInt(pastAdd.f, 10) || 0),
-      hour: 12, m: Date.now(),
-    };
-    await commitPastDay(Object.assign({}, pastDay.doc, { entries: [...pastDay.doc.entries, e] }));
-    setPastAdd({ name: "", cal: "", p: "", f: "" });
   };
   const pastSaveEdit = async () => {
     const cal = parseInt(pastEdit.cal, 10);
@@ -3384,7 +3471,7 @@ function Streakhouse() {
       if (!items.length) setReceiptNote("No food items found on that receipt — try a straighter, closer shot.");
       else {
         setReceiptItems(items.map((it, i) => ({
-          id: i, sel: true,
+          id: i, sel: true, shelf: "",
           name: String(it.name).toLowerCase().slice(0, 50),
           cal: String(Math.round(it.cal)),
           p: String(Math.round(it.protein || 0)),
@@ -3394,6 +3481,33 @@ function Streakhouse() {
         setReceiptNote(`Found ${items.length} food item${items.length === 1 ? "" : "s"} — uncheck any you don't want, tweak the numbers, then add.`);
       }
     } catch (e) { setReceiptNote(`Receipt scan failed (${e.message}).`); }
+    setReceiptBusy(false);
+  };
+  /* fridge / pantry contents photo -> same checklist, via the vision endpoint */
+  const scanFridge = async (file) => {
+    if (!file) return;
+    if (!settings.aiUrl) { setReceiptNote("Fridge scanning needs the AI Worker — set it up above (AI lookup)."); return; }
+    setReceiptBusy(true); setReceiptNote(""); setReceiptItems(null);
+    try {
+      const dataUrl = await compressImage(file, 1200, 0.85);
+      const res = await fetch(settings.aiUrl + "/meal", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: dataUrl }),
+      });
+      if (res.status === 404 || res.status === 405) throw new Error("your Worker doesn't have /meal yet — redeploy cloudflare-worker.js");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `fridge HTTP ${res.status}`);
+      const items = (data.items || []).filter((it) => it && it.name && typeof it.cal === "number");
+      if (!items.length) throw new Error("couldn't pick out any foods — try a brighter, closer shot");
+      setReceiptItems(items.map((it, i) => ({
+        id: i, sel: true, shelf: "",
+        name: String(it.name).toLowerCase().slice(0, 50),
+        cal: String(Math.round(it.cal)),
+        p: String(Math.round(it.protein || 0)),
+        f: String(Math.round(it.fiber || 0)),
+        g: "",
+      })));
+      setReceiptNote(`Spotted ${items.length} food${items.length === 1 ? "" : "s"} in there — per-serving estimates, so tweak anything, pick shelves, then add.`);
+    } catch (e) { setReceiptNote(`Fridge scan failed (${e.message}).`); }
     setReceiptBusy(false);
   };
   const setReceiptItem = (id, field, value) =>
@@ -3411,7 +3525,19 @@ function Streakhouse() {
       next.push(entry);
     }
     setCustomFoods(next); customStore(next);
-    flash(`${sel.length} food${sel.length === 1 ? "" : "s"} in your database — type them any time`);
+    /* rows with a shelf picked also land in the pantry, one settings write */
+    const pins = sel.filter((it) => it.shelf);
+    if (pins.length) {
+      const m = curPantryMods();
+      pins.forEach((it, i) => m.custom.push({
+        id: "c" + (Date.now() + i), cat: it.shelf,
+        name: it.name.trim().toLowerCase(), label: it.name.trim().slice(0, 16),
+        cal: parseInt(it.cal, 10), p: Math.max(0, Math.round(parseFloat(it.p) || 0)), f: Math.max(0, Math.round(parseFloat(it.f) || 0)),
+        sv: parseFloat(it.g) > 0 ? `${Math.round(parseFloat(it.g))}g · 1 serving` : "",
+      }));
+      setPantryMods(m);
+    }
+    flash(`${sel.length} food${sel.length === 1 ? "" : "s"} in your database${pins.length ? ` · ${pins.length} pinned to the pantry` : ""} — type them any time`);
     setReceiptItems(null); setReceiptNote("");
   };
 
@@ -3984,7 +4110,7 @@ function Streakhouse() {
             <div className="sub">{pastDay
               ? `Logging into ${shortDate(pastDay.date)} — every tap lands on that day.`
               : "Tap logs one serving · press & hold any item to size the portion (½, 40%, 2 servings…)."}</div>
-            {STAPLE_CATS.map((cat) => {
+            {pantryCats.filter((c) => c.items.length > 0).map((cat) => {
               const catCount = pantryDay.entries.filter((en) => cat.items.some((d) => d.name === en.name)).length;
               const open = openCat === cat.id;
               return (
@@ -4018,6 +4144,158 @@ function Streakhouse() {
               );
             })}
           </div>
+  );
+
+  /* Shared lookup stack: text search + estimate rows, label scan, new food,
+     meal/recipe photos, your-foods chips. Rendered in the tracker card on a
+     normal day AND inside the time machine, where addEntries routes
+     everything to the viewed past day. */
+  const lookupBlock = (
+    <React.Fragment>
+            <div className="row" style={{ alignItems: "stretch" }}>
+              <textarea ref={foodInputRef} rows={3} className="foodbox" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={foodPh} aria-label="Food description"
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitFood(); } }} />
+              <button className={`micbtn ${listening ? "ember" : ""}`} aria-label={listening ? "Stop dictation" : "Dictate food description"} aria-pressed={listening} onClick={toggleDictation}>
+                {listening ? "◼" : <MIcon k="mic" size={18} />}
+              </button>
+            </div>
+            {listening && <div className="note">Listening… speak the meal, tap ◼ when done.</div>}
+            <div className="row">
+              <input inputMode="numeric" value={calInput} onChange={(e) => setCalInput(e.target.value)} placeholder="cal" aria-label="Calories" />
+              <input inputMode="numeric" value={protInput} onChange={(e) => setProtInput(e.target.value)} placeholder="prot g" aria-label="Protein grams" />
+              <input inputMode="numeric" value={fibInput} onChange={(e) => setFibInput(e.target.value)} placeholder="fiber g" aria-label="Fiber grams" />
+            </div>
+            <div className="row">
+              <button className="ember" style={{ flex: 1 }} onClick={estimate} disabled={estimating || !desc.trim()}>{estimating ? "consulting the snack actuary…" : "Estimate"}</button>
+              <button className="pri" style={{ flex: 1 }} onClick={submitFood} disabled={!desc.trim() || !calInput}>Add</button>
+            </div>
+            {estimateNote && <div className="note">{estimateNote}</div>}
+
+            {estimateItems && (
+              <div>
+                {estimateItems.map((it) => (
+                  <div className={`estitem ${estFreebie(it) ? "freebierow" : ""}`} key={it.id}>
+                    <div className="row" style={{ marginTop: 0 }}>
+                      <input value={it.name} onChange={(e) => setEstimateItem(it.id, "name", e.target.value)} aria-label={`Name for ${it.raw}`} />
+                      <button className="tinybtn" title="Save to my foods for next time"
+                        aria-label={`Save ${it.name} to my foods`}
+                        disabled={!it.name.trim() || isNaN(parseInt(it.cal, 10))}
+                        onClick={() => { const k = saveCustomFood({ name: it.name, cal: parseInt(it.cal, 10), p: parseInt(it.p, 10) || 0, f: parseInt(it.f, 10) || 0, ft: it.ft }); if (k) flash(`Saved "${k}" — future lookups and typing will find it`); }}>☆</button>
+                      <button className="tinybtn" title="Remove item" aria-label={`Remove ${it.raw}`} onClick={() => removeEstimateItem(it.id)}>✕</button>
+                    </div>
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <input inputMode="numeric" value={it.cal} onChange={(e) => setEstimateItem(it.id, "cal", e.target.value)} placeholder="cal" aria-label={`Calories for ${it.raw}`} />
+                      <input inputMode="numeric" value={it.p} onChange={(e) => setEstimateItem(it.id, "p", e.target.value)} placeholder="prot g" aria-label={`Protein for ${it.raw}`} />
+                      <input inputMode="numeric" value={it.f} onChange={(e) => setEstimateItem(it.id, "f", e.target.value)} placeholder="fiber g" aria-label={`Fiber for ${it.raw}`} />
+                      <input value={it.portion} onChange={(e) => setEstimateItem(it.id, "portion", e.target.value)} placeholder="× 1" aria-label={`Portion of serving for ${it.raw}`} style={{ maxWidth: 62 }} title="Portion eaten: 0.5, 50% or 1/2" />
+                    </div>
+                    <div className="estnote">"{it.raw}" · {it.note}</div>
+                    {it.name.trim() && !isNaN(parseInt(it.cal, 10)) && (
+                      <label className="estnote" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                        <input type="checkbox" style={{ width: "auto" }} checked={!!it.save} onChange={(e) => setEstimateItem(it.id, "save", e.target.checked)} aria-label={`Remember ${it.name} for next time`} />
+                        Remember this for next time (saves to your foods)
+                      </label>
+                    )}
+                    {estFreebie(it) && <div className="estnote" style={{ color: "#3E8E2A" }}><FreebieLeaf size={12} /> fiber freebie (tier {it.ft}) — logs at 0 cal; protein & fiber log as-is</div>}
+                    {it.portion.trim() !== "" && (parsePortion(it.portion) == null
+                      ? <div className="estnote">portion? try 0.5, 50% or 1/2 — using the full serving for now</div>
+                      : estFrac(it) !== 1 && !isNaN(parseInt(it.cal, 10)) && (
+                        <div className="estnote">
+                          {prettyPortion(it.portion)} × serving = {estCal(it)} cal · {Math.round((parseInt(it.p, 10) || 0) * estFrac(it))}g prot · {Math.round((parseInt(it.f, 10) || 0) * estFrac(it))}g fiber
+                        </div>
+                      ))}
+                  </div>
+                ))}
+                <div className="row">
+                  <button className="pri" style={{ flex: 1 }} onClick={addEstimateItems} disabled={!readyEstimateItems.length}>
+                    Add {readyEstimateItems.length} item{readyEstimateItems.length === 1 ? "" : "s"} · {readyEstimateItems.reduce((a, it) => a + estLogCal(it), 0)} cal
+                  </button>
+                  <button onClick={() => { setEstimateItems(null); setEstimateNote(""); }}>Cancel</button>
+                </div>
+                {settings.aiUrl && (
+                  <div className="row">
+                    <button className="ember" style={{ width: "100%" }} onClick={() => chatHandoff(desc.trim() || estimateItems.map((x) => x.name).join(", "))}>
+                      <MIcon k="chat" size={13} /> {estimateItems.some((x) => x.cal === "") ? "Ask the Coworker instead" : "Numbers look off? Ask the Coworker"}
+                    </button>
+                  </div>
+                )}
+                {settings.aiUrl && <div className="estnote">The Coworker can also remember a food — say "save that" and it'll be here next time. Or tap ☆ on any row.</div>}
+              </div>
+            )}
+
+            <div className="row">
+              <button style={{ flex: 1 }} disabled={labelBusy} onClick={() => labelRef.current && labelRef.current.click()}>
+                {labelBusy ? "reading the fine print…" : <React.Fragment><MIcon k="camera" size={13} /> Scan a label</React.Fragment>}
+              </button>
+              <button style={{ flex: 1 }} onClick={() => { setLabelForm({ name: "", cal: "", p: "", f: "", g: "", liquid: false, logToday: true, saveDb: true }); setLabelNote(""); }}>＋ New food</button>
+              <input ref={labelRef} type="file" accept="image/*" aria-label="Nutrition label photo upload" style={{ display: "none" }} onChange={(e) => { scanLabel(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+            </div>
+            {settings.aiUrl && (
+              <div className="row">
+                <button style={{ flex: 1 }} disabled={estimating} onClick={() => mealRef.current && mealRef.current.click()}>
+                  <MIcon k="plate" size={13} /> Snap a meal
+                </button>
+                <button style={{ flex: 1 }} disabled={estimating} onClick={() => recipeRef.current && recipeRef.current.click()}>
+                  <MIcon k="book" size={13} /> Recipe photo
+                </button>
+                <input ref={mealRef} type="file" accept="image/*" aria-label="Meal photo upload" style={{ display: "none" }} onChange={(e) => { scanMeal(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+                <input ref={recipeRef} type="file" accept="image/*" aria-label="Recipe photo upload" style={{ display: "none" }} onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return; compressImage(f, 1400, 0.85).then((img) => scanRecipe({ image: img })); }} />
+              </div>
+            )}
+            {settings.aiUrl && (
+              <div className="sub" style={{ marginTop: 4 }}>Snap a plate for a draft ingredient breakdown, photograph a cookbook page, or paste a recipe link in the box above — the coworker reads the macros.</div>
+            )}
+            {labelNote && <div className="note">{labelNote}</div>}
+            {labelForm && (
+              <div className="estitem">
+                <div className="row" style={{ marginTop: 0 }}>
+                  <input value={labelForm.name} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { name: e.target.value }))} placeholder="Name (how you'll type it when logging)" aria-label="New food name" />
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <input inputMode="numeric" value={labelForm.cal} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { cal: e.target.value }))} placeholder="cal / serving" aria-label="Calories per serving" />
+                  <input inputMode="decimal" value={labelForm.p} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { p: e.target.value }))} placeholder="prot g" aria-label="Protein grams per serving" />
+                  <input inputMode="decimal" value={labelForm.f} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { f: e.target.value }))} placeholder="fiber g" aria-label="Fiber grams per serving" />
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <input inputMode="decimal" value={labelForm.g} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { g: e.target.value }))} placeholder="serving size (g or ml, optional)" aria-label="Serving size in grams or milliliters" />
+                  <select value={labelForm.ft || ""} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { ft: e.target.value }))} aria-label="Fiber freebie tier">
+                    <option value="">no freebie tier</option>
+                    <option value="1">freebie tier 1 (near-zero raw veg)</option>
+                    <option value="2">freebie tier 2 (low-cal raw veg)</option>
+                  </select>
+                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.liquid} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { liquid: e.target.checked }))} /> it's a drink
+                  </label>
+                </div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.logToday} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { logToday: e.target.checked }))} /> log it today
+                  </label>
+                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
+                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.saveDb} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { saveDb: e.target.checked }))} /> save to database
+                  </label>
+                </div>
+                <div className="estnote">Serving size lets "6 oz of…" or "half a…" scale correctly when you log it later.</div>
+                <div className="row" style={{ marginTop: 6 }}>
+                  <button className="pri" style={{ flex: 1 }} onClick={addLabelFood}>Add food</button>
+                  <button onClick={() => { setLabelForm(null); setLabelNote(""); }}>Cancel</button>
+                </div>
+              </div>
+            )}
+            {customFoods.length > 0 && (
+              <React.Fragment>
+                <div className="qdesc" style={{ marginTop: 10 }}>Your foods — tap to log one serving</div>
+                <div className="chips" style={{ marginTop: 4 }}>
+                  {customFoods.map((cf) => (
+                    <div key={cf.k[0]} className="chip" onClick={() => addEntry(cf.k[0], cf.c, cf.p || 0, cf.f || 0)}>
+                      {cf.k[0]} <span className="num" style={{ color: "#5C5254" }}>{cf.c}</span>
+                      <span className="x" role="button" aria-label={`Delete ${cf.k[0]} from food database`} onClick={(ev) => { ev.stopPropagation(); deleteCustomFood(cf.k[0]); }}>×</span>
+                    </div>
+                  ))}
+                </div>
+              </React.Fragment>
+            )}
+    </React.Fragment>
   );
 
   const eatsContent = (
@@ -4085,15 +4363,8 @@ function Streakhouse() {
                 <span className="num">{totalCal(pastDay.doc)} cal · {totalProt(pastDay.doc)}g prot · {totalFib(pastDay.doc)}g fiber</span>
               </div>
               <div className="qname" style={{ marginTop: 12 }}>Add to this day</div>
-              <div className="row" style={{ marginTop: 6 }}>
-                <input value={pastAdd.name} onChange={(e) => setPastAdd(Object.assign({}, pastAdd, { name: e.target.value }))} placeholder="what was it?" aria-label="Past day food name" />
-              </div>
-              <div className="row" style={{ marginTop: 6 }}>
-                <input inputMode="numeric" value={pastAdd.cal} onChange={(e) => setPastAdd(Object.assign({}, pastAdd, { cal: e.target.value }))} placeholder="cal" aria-label="Past day calories" />
-                <input inputMode="numeric" value={pastAdd.p} onChange={(e) => setPastAdd(Object.assign({}, pastAdd, { p: e.target.value }))} placeholder="prot g" aria-label="Past day protein" />
-                <input inputMode="numeric" value={pastAdd.f} onChange={(e) => setPastAdd(Object.assign({}, pastAdd, { f: e.target.value }))} placeholder="fiber g" aria-label="Past day fiber" />
-                <button className="pri" onClick={pastAddEntry} disabled={!pastAdd.name.trim() || isNaN(parseInt(pastAdd.cal, 10))}>Add</button>
-              </div>
+              <div className="sub" style={{ marginBottom: 0 }}>The whole toolkit works here — type it, estimate it, scan a label, snap the meal, paste a recipe link. Everything lands on {shortDate(pastDay.date)}.</div>
+              {lookupBlock}
               <div className="row" style={{ marginTop: 8 }}>
                 <button style={{ width: "100%" }} onClick={() => setPastDayState(null)}>Back to today</button>
               </div>
@@ -4206,179 +4477,7 @@ function Streakhouse() {
             </div>
             <div className="sub" style={{ marginTop: 4, marginBottom: 0 }}>Follows the time of day; tap a window to pin the next food there — handy for logging lunch after the fact. Tap it again to unpin.</div>
 
-            <div className="row" style={{ alignItems: "stretch" }}>
-              <textarea ref={foodInputRef} rows={3} className="foodbox" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={foodPh} aria-label="Food description"
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitFood(); } }} />
-              <button className={`micbtn ${listening ? "ember" : ""}`} aria-label={listening ? "Stop dictation" : "Dictate food description"} aria-pressed={listening} onClick={toggleDictation}>
-                {listening ? "◼" : <MIcon k="mic" size={18} />}
-              </button>
-            </div>
-            {listening && <div className="note">Listening… speak the meal, tap ◼ when done.</div>}
-            <div className="row">
-              <input inputMode="numeric" value={calInput} onChange={(e) => setCalInput(e.target.value)} placeholder="cal" aria-label="Calories" />
-              <input inputMode="numeric" value={protInput} onChange={(e) => setProtInput(e.target.value)} placeholder="prot g" aria-label="Protein grams" />
-              <input inputMode="numeric" value={fibInput} onChange={(e) => setFibInput(e.target.value)} placeholder="fiber g" aria-label="Fiber grams" />
-            </div>
-            <div className="row">
-              <button className="ember" style={{ flex: 1 }} onClick={estimate} disabled={estimating || !desc.trim()}>{estimating ? "consulting the snack actuary…" : "Estimate"}</button>
-              <button className="pri" style={{ flex: 1 }} onClick={submitFood} disabled={!desc.trim() || !calInput}>Add</button>
-            </div>
-            {estimateNote && <div className="note">{estimateNote}</div>}
-
-            {estimateItems && (
-              <div>
-                {estimateItems.map((it) => (
-                  <div className={`estitem ${estFreebie(it) ? "freebierow" : ""}`} key={it.id}>
-                    <div className="row" style={{ marginTop: 0 }}>
-                      <input value={it.name} onChange={(e) => setEstimateItem(it.id, "name", e.target.value)} aria-label={`Name for ${it.raw}`} />
-                      <button className="tinybtn" title="Save to my foods for next time"
-                        aria-label={`Save ${it.name} to my foods`}
-                        disabled={!it.name.trim() || isNaN(parseInt(it.cal, 10))}
-                        onClick={() => { const k = saveCustomFood({ name: it.name, cal: parseInt(it.cal, 10), p: parseInt(it.p, 10) || 0, f: parseInt(it.f, 10) || 0, ft: it.ft }); if (k) flash(`Saved "${k}" — future lookups and typing will find it`); }}>☆</button>
-                      <button className="tinybtn" title="Remove item" aria-label={`Remove ${it.raw}`} onClick={() => removeEstimateItem(it.id)}>✕</button>
-                    </div>
-                    <div className="row" style={{ marginTop: 6 }}>
-                      <input inputMode="numeric" value={it.cal} onChange={(e) => setEstimateItem(it.id, "cal", e.target.value)} placeholder="cal" aria-label={`Calories for ${it.raw}`} />
-                      <input inputMode="numeric" value={it.p} onChange={(e) => setEstimateItem(it.id, "p", e.target.value)} placeholder="prot g" aria-label={`Protein for ${it.raw}`} />
-                      <input inputMode="numeric" value={it.f} onChange={(e) => setEstimateItem(it.id, "f", e.target.value)} placeholder="fiber g" aria-label={`Fiber for ${it.raw}`} />
-                      <input value={it.portion} onChange={(e) => setEstimateItem(it.id, "portion", e.target.value)} placeholder="× 1" aria-label={`Portion of serving for ${it.raw}`} style={{ maxWidth: 62 }} title="Portion eaten: 0.5, 50% or 1/2" />
-                    </div>
-                    <div className="estnote">"{it.raw}" · {it.note}</div>
-                    {it.name.trim() && !isNaN(parseInt(it.cal, 10)) && (
-                      <label className="estnote" style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                        <input type="checkbox" style={{ width: "auto" }} checked={!!it.save} onChange={(e) => setEstimateItem(it.id, "save", e.target.checked)} aria-label={`Remember ${it.name} for next time`} />
-                        Remember this for next time (saves to your foods)
-                      </label>
-                    )}
-                    {estFreebie(it) && <div className="estnote" style={{ color: "#3E8E2A" }}><FreebieLeaf size={12} /> fiber freebie (tier {it.ft}) — logs at 0 cal; protein & fiber log as-is</div>}
-                    {it.portion.trim() !== "" && (parsePortion(it.portion) == null
-                      ? <div className="estnote">portion? try 0.5, 50% or 1/2 — using the full serving for now</div>
-                      : estFrac(it) !== 1 && !isNaN(parseInt(it.cal, 10)) && (
-                        <div className="estnote">
-                          {prettyPortion(it.portion)} × serving = {estCal(it)} cal · {Math.round((parseInt(it.p, 10) || 0) * estFrac(it))}g prot · {Math.round((parseInt(it.f, 10) || 0) * estFrac(it))}g fiber
-                        </div>
-                      ))}
-                  </div>
-                ))}
-                <div className="row">
-                  <button className="pri" style={{ flex: 1 }} onClick={addEstimateItems} disabled={!readyEstimateItems.length}>
-                    Add {readyEstimateItems.length} item{readyEstimateItems.length === 1 ? "" : "s"} · {readyEstimateItems.reduce((a, it) => a + estLogCal(it), 0)} cal
-                  </button>
-                  <button onClick={() => { setEstimateItems(null); setEstimateNote(""); }}>Cancel</button>
-                </div>
-                {settings.aiUrl && (
-                  <div className="row">
-                    <button className="ember" style={{ width: "100%" }} onClick={() => chatHandoff(desc.trim() || estimateItems.map((x) => x.name).join(", "))}>
-                      <MIcon k="chat" size={13} /> {estimateItems.some((x) => x.cal === "") ? "Ask the Coworker instead" : "Numbers look off? Ask the Coworker"}
-                    </button>
-                  </div>
-                )}
-                {settings.aiUrl && <div className="estnote">The Coworker can also remember a food — say "save that" and it'll be here next time. Or tap ☆ on any row.</div>}
-              </div>
-            )}
-
-            <div className="row">
-              <button style={{ flex: 1 }} disabled={labelBusy} onClick={() => labelRef.current && labelRef.current.click()}>
-                {labelBusy ? "reading the fine print…" : <React.Fragment><MIcon k="camera" size={13} /> Scan a label</React.Fragment>}
-              </button>
-              <button style={{ flex: 1 }} disabled={receiptBusy} onClick={() => receiptRef.current && receiptRef.current.click()}>
-                {receiptBusy ? "reading the receipt…" : <React.Fragment><MIcon k="receipt" size={13} /> Scan a receipt</React.Fragment>}
-              </button>
-              <button style={{ flex: 1 }} onClick={() => { setLabelForm({ name: "", cal: "", p: "", f: "", g: "", liquid: false, logToday: true, saveDb: true }); setLabelNote(""); }}>＋ New food</button>
-              <input ref={labelRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { scanLabel(e.target.files && e.target.files[0]); e.target.value = ""; }} />
-              <input ref={receiptRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { scanReceipt(e.target.files && e.target.files[0]); e.target.value = ""; }} />
-            </div>
-            {settings.aiUrl && (
-              <div className="row">
-                <button style={{ flex: 1 }} disabled={estimating} onClick={() => mealRef.current && mealRef.current.click()}>
-                  <MIcon k="plate" size={13} /> Snap a meal
-                </button>
-                <button style={{ flex: 1 }} disabled={estimating} onClick={() => recipeRef.current && recipeRef.current.click()}>
-                  <MIcon k="book" size={13} /> Recipe photo
-                </button>
-                <input ref={mealRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { scanMeal(e.target.files && e.target.files[0]); e.target.value = ""; }} />
-                <input ref={recipeRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; if (!f) return; compressImage(f, 1400, 0.85).then((img) => scanRecipe({ image: img })); }} />
-              </div>
-            )}
-            {settings.aiUrl && (
-              <div className="sub" style={{ marginTop: 4 }}>Snap a plate for a draft ingredient breakdown, photograph a cookbook page, or paste a recipe link in the box above — the coworker reads the macros.</div>
-            )}
-            {labelNote && <div className="note">{labelNote}</div>}
-            {receiptNote && <div className="note">{receiptNote}</div>}
-            {receiptItems && (
-              <div>
-                {receiptItems.map((it) => (
-                  <div className="estitem" key={it.id} style={{ opacity: it.sel ? 1 : 0.55 }}>
-                    <div className="row" style={{ marginTop: 0, alignItems: "center" }}>
-                      <input type="checkbox" style={{ width: "auto" }} checked={it.sel} onChange={(e) => setReceiptItem(it.id, "sel", e.target.checked)} aria-label={`Keep ${it.name}`} />
-                      <input value={it.name} onChange={(e) => setReceiptItem(it.id, "name", e.target.value)} aria-label={`Receipt item name`} />
-                    </div>
-                    <div className="row" style={{ marginTop: 6 }}>
-                      <input inputMode="numeric" value={it.cal} onChange={(e) => setReceiptItem(it.id, "cal", e.target.value)} placeholder="cal" aria-label={`Calories for ${it.name}`} />
-                      <input inputMode="numeric" value={it.p} onChange={(e) => setReceiptItem(it.id, "p", e.target.value)} placeholder="prot g" aria-label={`Protein for ${it.name}`} />
-                      <input inputMode="numeric" value={it.f} onChange={(e) => setReceiptItem(it.id, "f", e.target.value)} placeholder="fiber g" aria-label={`Fiber for ${it.name}`} />
-                      <input inputMode="numeric" value={it.g} onChange={(e) => setReceiptItem(it.id, "g", e.target.value)} placeholder="g/serv" aria-label={`Serving grams for ${it.name}`} />
-                    </div>
-                  </div>
-                ))}
-                <div className="row">
-                  <button className="pri" style={{ flex: 1 }} onClick={addReceiptFoods} disabled={!receiptItems.some((x) => x.sel)}>
-                    Add {receiptItems.filter((x) => x.sel).length} to my foods
-                  </button>
-                  <button onClick={() => { setReceiptItems(null); setReceiptNote(""); }}>Cancel</button>
-                </div>
-                <div className="sub">These save to your food database (they don't log to today) — type or dictate them whenever you eat them.</div>
-              </div>
-            )}
-            {labelForm && (
-              <div className="estitem">
-                <div className="row" style={{ marginTop: 0 }}>
-                  <input value={labelForm.name} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { name: e.target.value }))} placeholder="Name (how you'll type it when logging)" aria-label="New food name" />
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <input inputMode="numeric" value={labelForm.cal} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { cal: e.target.value }))} placeholder="cal / serving" aria-label="Calories per serving" />
-                  <input inputMode="decimal" value={labelForm.p} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { p: e.target.value }))} placeholder="prot g" aria-label="Protein grams per serving" />
-                  <input inputMode="decimal" value={labelForm.f} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { f: e.target.value }))} placeholder="fiber g" aria-label="Fiber grams per serving" />
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <input inputMode="decimal" value={labelForm.g} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { g: e.target.value }))} placeholder="serving size (g or ml, optional)" aria-label="Serving size in grams or milliliters" />
-                  <select value={labelForm.ft || ""} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { ft: e.target.value }))} aria-label="Fiber freebie tier">
-                    <option value="">no freebie tier</option>
-                    <option value="1">freebie tier 1 (near-zero raw veg)</option>
-                    <option value="2">freebie tier 2 (low-cal raw veg)</option>
-                  </select>
-                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.liquid} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { liquid: e.target.checked }))} /> it's a drink
-                  </label>
-                </div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
-                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.logToday} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { logToday: e.target.checked }))} /> log it today
-                  </label>
-                  <label className="qdesc" style={{ display: "flex", alignItems: "center", gap: 6, flex: 1 }}>
-                    <input type="checkbox" style={{ width: "auto" }} checked={labelForm.saveDb} onChange={(e) => setLabelForm(Object.assign({}, labelForm, { saveDb: e.target.checked }))} /> save to database
-                  </label>
-                </div>
-                <div className="estnote">Serving size lets "6 oz of…" or "half a…" scale correctly when you log it later.</div>
-                <div className="row" style={{ marginTop: 6 }}>
-                  <button className="pri" style={{ flex: 1 }} onClick={addLabelFood}>Add food</button>
-                  <button onClick={() => { setLabelForm(null); setLabelNote(""); }}>Cancel</button>
-                </div>
-              </div>
-            )}
-            {customFoods.length > 0 && (
-              <React.Fragment>
-                <div className="qdesc" style={{ marginTop: 10 }}>Your foods — tap to log one serving</div>
-                <div className="chips" style={{ marginTop: 4 }}>
-                  {customFoods.map((cf) => (
-                    <div key={cf.k[0]} className="chip" onClick={() => addEntry(cf.k[0], cf.c, cf.p || 0, cf.f || 0)}>
-                      {cf.k[0]} <span className="num" style={{ color: "#5C5254" }}>{cf.c}</span>
-                      <span className="x" role="button" aria-label={`Delete ${cf.k[0]} from food database`} onClick={(ev) => { ev.stopPropagation(); deleteCustomFood(cf.k[0]); }}>×</span>
-                    </div>
-                  ))}
-                </div>
-              </React.Fragment>
-            )}
+            {lookupBlock}
 
             {presets.length > 0 && (
               <div className="chips">
@@ -4974,6 +5073,140 @@ function Streakhouse() {
             {(aiNote || settings.aiUrl) && (
               <div className="sub" style={{ marginTop: 8 }}>{aiNote || "On — new foods are estimated by Claude and cached, so each phrase only ever costs one call."}</div>
             )}
+          </div>
+
+          <div className="card">
+            <h2><span><MIcon k="receipt" /> Restock</span></h2>
+            <div className="sub">
+              Week planning starts here. Photograph a grocery receipt, or open the fridge or pantry and snap what's inside —
+              everything found lands in your food database for quick logging later. Any item can also be pinned straight
+              onto a Pantry shelf (Obsessed included) so this week's haul is one tap away.
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button style={{ flex: 1 }} disabled={receiptBusy} onClick={() => receiptRef.current && receiptRef.current.click()}>
+                {receiptBusy ? "reading…" : <React.Fragment><MIcon k="receipt" size={13} /> Scan a receipt</React.Fragment>}
+              </button>
+              <button style={{ flex: 1 }} disabled={receiptBusy} onClick={() => fridgeRef.current && fridgeRef.current.click()}>
+                <MIcon k="camera" size={13} /> Snap fridge / pantry
+              </button>
+              <input ref={receiptRef} type="file" accept="image/*" aria-label="Receipt photo upload" style={{ display: "none" }} onChange={(e) => { scanReceipt(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+              <input ref={fridgeRef} type="file" accept="image/*" aria-label="Fridge or pantry photo upload" style={{ display: "none" }} onChange={(e) => { scanFridge(e.target.files && e.target.files[0]); e.target.value = ""; }} />
+            </div>
+            {receiptNote && <div className="note">{receiptNote}</div>}
+            {receiptItems && (
+              <div>
+                {receiptItems.map((it) => (
+                  <div className="estitem" key={it.id} style={{ opacity: it.sel ? 1 : 0.55 }}>
+                    <div className="row" style={{ marginTop: 0, alignItems: "center" }}>
+                      <input type="checkbox" style={{ width: "auto" }} checked={it.sel} onChange={(e) => setReceiptItem(it.id, "sel", e.target.checked)} aria-label={`Keep ${it.name}`} />
+                      <input value={it.name} onChange={(e) => setReceiptItem(it.id, "name", e.target.value)} aria-label={`Receipt item name`} />
+                    </div>
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <input inputMode="numeric" value={it.cal} onChange={(e) => setReceiptItem(it.id, "cal", e.target.value)} placeholder="cal" aria-label={`Calories for ${it.name}`} />
+                      <input inputMode="numeric" value={it.p} onChange={(e) => setReceiptItem(it.id, "p", e.target.value)} placeholder="prot g" aria-label={`Protein for ${it.name}`} />
+                      <input inputMode="numeric" value={it.f} onChange={(e) => setReceiptItem(it.id, "f", e.target.value)} placeholder="fiber g" aria-label={`Fiber for ${it.name}`} />
+                      <input inputMode="numeric" value={it.g} onChange={(e) => setReceiptItem(it.id, "g", e.target.value)} placeholder="g/serv" aria-label={`Serving grams for ${it.name}`} />
+                    </div>
+                    <div className="row" style={{ marginTop: 6 }}>
+                      <select value={it.shelf || ""} onChange={(e) => setReceiptItem(it.id, "shelf", e.target.value)} aria-label={`Pantry shelf for ${it.name}`}>
+                        <option value="">food database only</option>
+                        {PANTRY_SHELVES.map((s) => <option key={s.id} value={s.id}>also pin to {s.label}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+                <div className="row">
+                  <button className="pri" style={{ flex: 1 }} onClick={addReceiptFoods} disabled={!receiptItems.some((x) => x.sel)}>
+                    Add {receiptItems.filter((x) => x.sel).length} to my foods
+                  </button>
+                  <button onClick={() => { setReceiptItems(null); setReceiptNote(""); }}>Cancel</button>
+                </div>
+                <div className="sub">Nothing here logs to today — it stocks the database (and any shelves you picked) for the week ahead.</div>
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h2><span><MIcon k="fork" /> Customize the Pantry</span></h2>
+            <div className="sub">
+              Your shelves, your rules — move staples between shelves, fix numbers, retire what you never eat, and add
+              this week's groceries or the current hyperfixation meal. The Obsessed shelf only shows up in the pantry
+              once something's on it. Nothing is ever wiped: restore below brings every built-in back.
+            </div>
+            <div className="pips" aria-label="Pick a shelf to edit">
+              {PANTRY_SHELVES.map((s) => {
+                const c = pantryCats.find((x) => x.id === s.id);
+                return (
+                  <div key={s.id} role="button" tabIndex={0} aria-pressed={pantryTab === s.id}
+                    className={`pip ${pantryTab === s.id ? "slotaim" : ""}`}
+                    onClick={() => { setPantryTab(s.id); setPantryEdit(null); }}
+                    onKeyDown={(e) => e.key === "Enter" && setPantryTab(s.id)}>
+                    {s.label} <span className="num">{c ? c.items.length : 0}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {(pantryCats.find((c) => c.id === pantryTab) || { items: [] }).items.map((d) =>
+              pantryEdit && pantryEdit.id === d.id ? (
+                <div className="estitem" key={d.id}>
+                  <div className="row" style={{ marginTop: 0 }}>
+                    <input value={pantryEdit.name} onChange={(e) => setPantryEdit(Object.assign({}, pantryEdit, { name: e.target.value }))} placeholder="full name (used when logging)" aria-label="Pantry item name" />
+                    <input value={pantryEdit.label} onChange={(e) => setPantryEdit(Object.assign({}, pantryEdit, { label: e.target.value }))} placeholder="tile label" aria-label="Pantry tile label" style={{ maxWidth: 110 }} />
+                  </div>
+                  <div className="row" style={{ marginTop: 6 }}>
+                    <input inputMode="numeric" value={pantryEdit.cal} onChange={(e) => setPantryEdit(Object.assign({}, pantryEdit, { cal: e.target.value }))} placeholder="cal" aria-label="Pantry item calories" />
+                    <input inputMode="numeric" value={pantryEdit.p} onChange={(e) => setPantryEdit(Object.assign({}, pantryEdit, { p: e.target.value }))} placeholder="prot g" aria-label="Pantry item protein" />
+                    <input inputMode="numeric" value={pantryEdit.f} onChange={(e) => setPantryEdit(Object.assign({}, pantryEdit, { f: e.target.value }))} placeholder="fiber g" aria-label="Pantry item fiber" />
+                  </div>
+                  <div className="row" style={{ marginTop: 6 }}>
+                    <input value={pantryEdit.sv} onChange={(e) => setPantryEdit(Object.assign({}, pantryEdit, { sv: e.target.value }))} placeholder={'serving, e.g. "113g · ½ cup"'} aria-label="Pantry item serving size" />
+                    <select value={pantryEdit.cat} onChange={(e) => setPantryEdit(Object.assign({}, pantryEdit, { cat: e.target.value }))} aria-label="Shelf for this pantry item">
+                      {PANTRY_SHELVES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="row" style={{ marginTop: 6 }}>
+                    <button className="pri" style={{ flex: 1 }} onClick={savePantryEdit} disabled={!pantryEdit.name.trim() || isNaN(parseInt(pantryEdit.cal, 10))}>Save</button>
+                    <button onClick={() => setPantryEdit(null)}>Cancel</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="entry" key={d.id}>
+                  <span className="nm">{d.label}{d.sv ? <span className="entrymacros num">{d.sv}</span> : null}</span>
+                  <span className="actions">
+                    <span className="cal num">{d.cal}</span>
+                    <button className="tinybtn" title="Edit" aria-label={`Edit pantry ${d.name}`} onClick={() => setPantryEdit({ id: d.id, name: d.name, label: d.label, cal: String(d.cal), p: String(d.p || 0), f: String(d.f || 0), sv: d.sv || "", cat: pantryTab })}>✎</button>
+                    <button className="tinybtn" title="Remove from pantry" aria-label={`Remove pantry ${d.name}`} onClick={() => deletePantryItem(d.id)}>✕</button>
+                  </span>
+                </div>
+              )
+            )}
+            {(pantryCats.find((c) => c.id === pantryTab) || { items: [] }).items.length === 0 && (
+              <div className="empty">{pantryTab === "obsessed" ? "Nothing you're obsessed with yet. Bold claim." : "Empty shelf."}</div>
+            )}
+            <div className="qname" style={{ marginTop: 12 }}>Add to the pantry</div>
+            <div className="qdesc">This week's groceries, a planned special dinner, the current hyperfixation meal — park it on any shelf and it's one tap to log.</div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <input value={pantryAdd.name} onChange={(e) => setPantryAdd(Object.assign({}, pantryAdd, { name: e.target.value }))} placeholder="birria tacos, protein cheesecake…" aria-label="New pantry item name" />
+            </div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <input inputMode="numeric" value={pantryAdd.cal} onChange={(e) => setPantryAdd(Object.assign({}, pantryAdd, { cal: e.target.value }))} placeholder="cal / serving" aria-label="New pantry item calories" />
+              <input inputMode="numeric" value={pantryAdd.p} onChange={(e) => setPantryAdd(Object.assign({}, pantryAdd, { p: e.target.value }))} placeholder="prot g" aria-label="New pantry item protein" />
+              <input inputMode="numeric" value={pantryAdd.f} onChange={(e) => setPantryAdd(Object.assign({}, pantryAdd, { f: e.target.value }))} placeholder="fiber g" aria-label="New pantry item fiber" />
+            </div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <input value={pantryAdd.sv} onChange={(e) => setPantryAdd(Object.assign({}, pantryAdd, { sv: e.target.value }))} placeholder={'serving (optional): "250g · 1 bowl"'} aria-label="New pantry item serving size" />
+              <select value={pantryAdd.cat} onChange={(e) => setPantryAdd(Object.assign({}, pantryAdd, { cat: e.target.value }))} aria-label="Shelf for new pantry item">
+                {PANTRY_SHELVES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+            </div>
+            <div className="row" style={{ marginTop: 6 }}>
+              <button className="pri" style={{ flex: 1 }} onClick={addPantryItem} disabled={!pantryAdd.name.trim() || isNaN(parseInt(pantryAdd.cal, 10))}>Add to pantry</button>
+            </div>
+            <div className="row" style={{ marginTop: 10 }}>
+              <button style={{ width: "100%" }} onClick={() => (restoreArm ? restorePantry() : setRestoreArm(true))} onBlur={() => setRestoreArm(false)}>
+                {restoreArm ? "Really restore the factory pantry? Tap again" : "Restore default pantry"}
+              </button>
+            </div>
           </div>
 
           <div className="card">
