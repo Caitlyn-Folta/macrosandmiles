@@ -3168,7 +3168,7 @@ function Streakhouse() {
     }
     const doc = (await sget(K.day(ds))) || emptyDay(ds);
     setPastDayState({ date: ds, doc });
-    setPastEdit(null); setPastAdd({ name: "", cal: "", p: "", f: "" });
+    setPastEdit(null); setDesc(""); setCalInput(""); setProtInput(""); setFibInput(""); setEstimateItems(null); setEstimateNote("");
   };
   const commitPastDay = async (doc) => {
     await sset(K.day(doc.date), doc);
