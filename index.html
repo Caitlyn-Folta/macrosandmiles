@@ -5133,12 +5133,12 @@ function Streakhouse() {
               this week's groceries or the current hyperfixation meal. The Obsessed shelf only shows up in the pantry
               once something's on it. Nothing is ever wiped: restore below brings every built-in back.
             </div>
-            <div className="pips" aria-label="Pick a shelf to edit">
+            <div className="pips" style={{ flexWrap: "wrap" }} aria-label="Pick a shelf to edit">
               {PANTRY_SHELVES.map((s) => {
                 const c = pantryCats.find((x) => x.id === s.id);
                 return (
                   <div key={s.id} role="button" tabIndex={0} aria-pressed={pantryTab === s.id}
-                    className={`pip ${pantryTab === s.id ? "slotaim" : ""}`}
+                    className={`pip ${pantryTab === s.id ? "slotaim" : ""}`} style={{ flex: "0 0 auto" }}
                     onClick={() => { setPantryTab(s.id); setPantryEdit(null); }}
                     onKeyDown={(e) => e.key === "Enter" && setPantryTab(s.id)}>
                     {s.label} <span className="num">{c ? c.items.length : 0}</span>
